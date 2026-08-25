@@ -1,0 +1,40 @@
+name: SamEbookLibrary
+options:
+  bundleIdPrefix: com.sam.samebooklibrary
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    ENABLE_HARDENED_RUNTIME: NO
+targets:
+  SamEbookLibrary:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/SamEbookLibrary
+    resources:
+      - path: Resources
+    info:
+      path: Sources/SamEbookLibrary/App/Info.plist
+      properties:
+        CFBundleDisplayName: Sam's Ebook Library
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        LSApplicationCategoryType: public.app-category.productivity
+        LSMinimumSystemVersion: "13.0"
+        NSHumanReadableCopyright: "Personal use"
+        NSDocumentsFolderUsageDescription: "Sam's Ebook Library scans your Documents folder to find EPUB, PDF, and CBZ books to add to your library."
+        NSDesktopFolderUsageDescription: "Sam's Ebook Library scans your Desktop folder to find EPUB, PDF, and CBZ books to add to your library."
+        NSDownloadsFolderUsageDescription: "Sam's Ebook Library scans your Downloads folder to find EPUB, PDF, and CBZ books to add to your library."
+        NSRemovableVolumesUsageDescription: "Sam's Ebook Library can look for books on connected drives you choose to add."
+        ITSAppUsesNonExemptEncryption: false
+    entitlements:
+      path: Sources/SamEbookLibrary/App/SamEbookLibrary.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+    scheme:
+      testTargets: []
+      gatherCoverageData: false
