@@ -500,8 +500,10 @@ struct HeroBand: View {
 /// Single cover-art tile in the library grid.
 struct BookCoverTile: View {
     let book: Book
+    @EnvironmentObject private var library: LibraryStore
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
+    @State private var showReader = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
@@ -546,9 +548,15 @@ struct BookCoverTile: View {
         .contentShape(Rectangle())
         .contextMenu {
             Button {
+                showReader = true
+            } label: {
+                Label("Read", systemImage: "book.fill")
+            }
+
+            Button {
                 NSWorkspace.shared.open(book.sourceURL)
             } label: {
-                Label("Open", systemImage: "doc.text")
+                Label("Open in Default App", systemImage: "arrow.up.forward.app")
             }
 
             Button {
@@ -565,6 +573,10 @@ struct BookCoverTile: View {
             } label: {
                 Label("Copy Path", systemImage: "doc.on.doc")
             }
+        }
+        .sheet(isPresented: $showReader) {
+            BookReaderSheet(book: book)
+                .environmentObject(library)
         }
     }
 }

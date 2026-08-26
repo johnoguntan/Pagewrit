@@ -29,19 +29,9 @@ struct BookDetailView: View {
 
     // MARK: - In-App Reader
 
-    @ViewBuilder
     private var readerSheet: some View {
-        switch book.format {
-        case .pdf:
-            PDFReaderView(book: book)
-                .environmentObject(library)
-        case .cbz:
-            CBZReaderView(book: book)
-                .environmentObject(library)
-        case .epub:
-            EPUBReaderView(book: book)
-                .environmentObject(library)
-        }
+        BookReaderSheet(book: book)
+            .environmentObject(library)
     }
 
     // MARK: - Cover (left column)
