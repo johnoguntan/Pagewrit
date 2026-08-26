@@ -33,7 +33,7 @@ struct SettingsView: View {
                         .buttonStyle(.borderless)
                     }
                 }
-                Button("Add Folder…") {
+                Button("Add Folder\u{2026}") {
                     addFolder()
                 }
             }

@@ -1,4 +1,6 @@
-# Sam's Ebook Library
+# Stoa
+
+Sam's personal ebook library, built native for macOS.
 
 Native macOS app (SwiftUI, non-sandboxed, notarized) that scans your Mac for
 EPUB/PDF/CBZ books, imports them into one library with a built-in reader, and
@@ -20,13 +22,13 @@ What exists right now:
 ## First-time setup (run this on your actual Mac, in Terminal)
 
 ```bash
-cd ~/Documents/SamEbookLibrary
+cd ~/Documents/Stoa
 brew install xcodegen        # one-time, if you don't have it
-xcodegen generate            # turns project.yml into SamEbookLibrary.xcodeproj
-open SamEbookLibrary.xcodeproj
+xcodegen generate            # turns project.yml into Stoa.xcodeproj
+open Stoa.xcodeproj
 ```
 
-Then in Xcode: pick the `SamEbookLibrary` scheme, hit Run (⌘R). The first
+Then in Xcode: pick the `Stoa` scheme, hit Run (⌘R). The first
 launch will pop the standard macOS "would like to access files in your
 Documents/Desktop/Downloads folder" dialogs — click Allow on each. That's the
 whole permission story; no System Settings trip needed.

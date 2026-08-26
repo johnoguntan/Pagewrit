@@ -39,4 +39,22 @@ enum BookFormat: String, CaseIterable {
         }
         self = match
     }
+
+    /// SF Symbol name for this format.
+    var systemImage: String {
+        switch self {
+        case .epub: return "book"
+        case .pdf:  return "doc.richtext"
+        case .cbz:  return "photo.on.rectangle"
+        }
+    }
+
+    /// Human-readable section title for grouping in the UI.
+    var sectionTitle: String {
+        switch self {
+        case .epub: return "EPUB"
+        case .pdf:  return "PDF"
+        case .cbz:  return "CBZ"
+        }
+    }
 }

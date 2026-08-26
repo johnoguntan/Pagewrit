@@ -1,4 +1,4 @@
-# Sam's Ebook Library App — Plan & Architecture
+# Stoa — Plan & Architecture
 
 **Type:** Native macOS app, SwiftUI
 **Goal:** Scan Sam's laptop for ebooks, pull them into one Calibre-style library, with a built-in reader and cloud backup.
@@ -34,7 +34,7 @@
 ## 3. High-Level Architecture
 
 ```
-SamEbookLibrary (macOS App, SwiftUI + AppKit interop)
+Stoa (macOS App, SwiftUI + AppKit interop)
 │
 ├── ScannerService
 │   ├── Watches: ~/Documents, ~/Desktop, ~/Downloads, + user-added folders
@@ -51,7 +51,7 @@ SamEbookLibrary (macOS App, SwiftUI + AppKit interop)
 │
 ├── LibraryStore
 │   ├── SQLite (via SwiftData or GRDB) — book metadata, tags, collections, read progress
-│   └── Library folder location = iCloud Drive/SamEbookLibrary or GoogleDrive/SamEbookLibrary
+│   └── Library folder location = iCloud Drive/Stoa or GoogleDrive/Stoa
 │
 ├── UI (SwiftUI)
 │   ├── Library Grid/List View — covers, search, sort (title/author/recent/format)
