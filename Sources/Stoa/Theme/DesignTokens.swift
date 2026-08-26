@@ -20,9 +20,17 @@ enum DesignTokens {
 
     // MARK: - Colors
 
-    /// Refined indigo-blue, adapting for light/dark.
-    static let accent = Color(light: NSColor(red: 0.353, green: 0.416, blue: 0.859, alpha: 1),
-                             dark: NSColor(red: 0.545, green: 0.596, blue: 0.941, alpha: 1))
+    /// Deep royal indigo-violet, adapting for light/dark — richer and more
+    /// saturated than the original periwinkle accent, reads as a deliberate
+    /// jewel tone rather than a default "blue".
+    static let accent = Color(light: NSColor(red: 0.278, green: 0.278, blue: 0.784, alpha: 1),
+                             dark: NSColor(red: 0.541, green: 0.541, blue: 0.996, alpha: 1))
+
+    /// A warmer secondary accent (muted amber) reserved for small moments
+    /// that shouldn't compete with the primary accent — currently unused,
+    /// available for a future "favorite"/highlight affordance.
+    static let accentSecondary = Color(light: NSColor(red: 0.729, green: 0.541, blue: 0.204, alpha: 1),
+                                      dark: NSColor(red: 0.847, green: 0.663, blue: 0.361, alpha: 1))
 
     /// Soft warm ivory / warm charcoal. Main window and detail content background.
     static let background = Color(light: NSColor(red: 0.973, green: 0.965, blue: 0.949, alpha: 1),

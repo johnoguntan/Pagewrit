@@ -97,13 +97,22 @@ struct ContentView: View {
     private var sidebar: some View {
         List(selection: $selectedFileID) {
             // App mark + Library row
+            //
+            // NOTE: this row deliberately does NOT use .tag(nil as String?).
+            // SwiftUI's List(selection:) with an Optional binding has a known
+            // quirk where tapping a nil-tagged row doesn't reliably clear the
+            // selection back to nil — it only reliably moves TO a non-nil tag.
+            // A manual tap handler sidesteps that entirely.
             Section {
                 sidebarRow(
                     title: "All Books",
                     icon: "books.vertical",
                     isSelected: selectedFileID == nil
                 )
-                .tag(nil as String?)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    selectedFileID = nil
+                }
             }
 
             Section(header: sidebarSectionLabel("WATCHED FOLDERS")) {
