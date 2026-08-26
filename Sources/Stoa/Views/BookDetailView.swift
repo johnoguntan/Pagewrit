@@ -39,7 +39,8 @@ struct BookDetailView: View {
             CBZReaderView(book: book)
                 .environmentObject(library)
         case .epub:
-            EmptyView()
+            EPUBReaderView(book: book)
+                .environmentObject(library)
         }
     }
 
@@ -165,15 +166,15 @@ struct BookDetailView: View {
     private var buttonsRow: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             Button {
-                if book.format == .pdf || book.format == .cbz {
+                if book.format == .pdf || book.format == .cbz || book.format == .epub {
                     showReader = true
                 } else {
                     NSWorkspace.shared.open(book.sourceURL)
                 }
             } label: {
                 Label(
-                    book.format == .pdf || book.format == .cbz ? "Read" : "Open",
-                    systemImage: book.format == .pdf || book.format == .cbz ? "book.fill" : "book"
+                    book.format == .pdf || book.format == .cbz || book.format == .epub ? "Read" : "Open",
+                    systemImage: book.format == .pdf || book.format == .cbz || book.format == .epub ? "book.fill" : "book"
                 )
                     .font(DesignTokens.sansFont(
                         size: DesignTokens.Detail.PrimaryButton.fontSize,
