@@ -10,6 +10,7 @@ struct BookDetailView: View {
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.colorScheme) private var colorScheme
     @State private var newTagText = ""
+    @State private var showReader = false
 
     var body: some View {
         ScrollView {
@@ -21,6 +22,25 @@ struct BookDetailView: View {
         }
         .background(DesignTokens.background.ignoresSafeArea())
         .navigationTitle(book.title)
+        .sheet(isPresented: $showReader) {
+            readerSheet
+        }
+    }
+
+    // MARK: - In-App Reader
+
+    @ViewBuilder
+    private var readerSheet: some View {
+        switch book.format {
+        case .pdf:
+            PDFReaderView(book: book)
+                .environmentObject(library)
+        case .cbz:
+            CBZReaderView(book: book)
+                .environmentObject(library)
+        case .epub:
+            EmptyView()
+        }
     }
 
     // MARK: - Cover (left column)
@@ -145,9 +165,16 @@ struct BookDetailView: View {
     private var buttonsRow: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             Button {
-                NSWorkspace.shared.open(book.sourceURL)
+                if book.format == .pdf || book.format == .cbz {
+                    showReader = true
+                } else {
+                    NSWorkspace.shared.open(book.sourceURL)
+                }
             } label: {
-                Label("Open", systemImage: "book")
+                Label(
+                    book.format == .pdf || book.format == .cbz ? "Read" : "Open",
+                    systemImage: book.format == .pdf || book.format == .cbz ? "book.fill" : "book"
+                )
                     .font(DesignTokens.sansFont(
                         size: DesignTokens.Detail.PrimaryButton.fontSize,
                         weight: .semibold
