@@ -13,9 +13,25 @@ struct ContentView: View {
 
     // MARK: - Computed data
 
+    /// Files scoped by the sidebar selection (a format, a watched folder, or
+    /// "All Books" when nil), then further narrowed by the search field.
     private var filteredFiles: [DiscoveredFile] {
-        guard !searchText.isEmpty else { return scanner.discoveredFiles }
-        return scanner.discoveredFiles.filter {
+        var files = scanner.discoveredFiles
+
+        if let selectedFileID {
+            if let format = BookFormat(rawValue: selectedFileID) {
+                // A "Formats" row was picked.
+                files = files.filter { $0.format == format }
+            } else {
+                // A "Watched Folders" row was picked — its tag is the folder's
+                // path. Match files that live inside that folder (recursively).
+                let folderPath = selectedFileID.hasSuffix("/") ? selectedFileID : selectedFileID + "/"
+                files = files.filter { $0.url.path.hasPrefix(folderPath) }
+            }
+        }
+
+        guard !searchText.isEmpty else { return files }
+        return files.filter {
             $0.url.lastPathComponent.localizedCaseInsensitiveContains(searchText)
         }
     }
