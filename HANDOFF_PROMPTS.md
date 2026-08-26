@@ -283,38 +283,83 @@ materials, not default SwiftUI list styling.
 
 ---
 
-## Prompt 2 — Phase 3: Reader
+## Prompt 2 — Phase 3: Reader (EPUB only — rewritten, supersedes the original)
+
+PDF and CBZ readers were already implemented directly (not by you) and are
+committed. This prompt is scoped to the one remaining piece: the EPUB reader.
+Read the existing code before writing anything — the patterns below already
+exist in the codebase and your EPUB reader should match them, not invent new
+ones.
 
 ```
 Continuing Stoa at ~/Documents/Stoa (see PLAN.md).
-Phase 1 (scanning) and Phase 2 (import/metadata + library grid) are done.
+Phase 1 (scanning), Phase 2 (import/metadata + SwiftData library), and the
+PDF + CBZ halves of Phase 3 are done and committed. Book is a SwiftData
+@Model now (Sources/Stoa/Models/Book.swift). Look at these two files first —
+your EPUB reader should follow the exact same shape:
 
-Now build Phase 3 — the in-app Reader:
+- Sources/Stoa/Views/PDFReaderView.swift
+- Sources/Stoa/Views/CBZReaderView.swift
 
-1. Add a `ReaderView` (Sources/Stoa/Views/) that's shown when a
-   book is opened from the library grid or Book Detail screen, dispatching by
-   format:
-   - PDF: use PDFKit's `PDFView` directly (AppKit interop via
-     `NSViewRepresentable`) — page navigation, zoom, and a page-thumbnail
-     sidebar if reasonable.
-   - EPUB: render via `WKWebView` loading the EPUB's unpacked HTML content
-     (EPUBKit gives you the manifest/spine); implement forward/back chapter
-     navigation. Keep formatting simple for v1 — no need for custom
-     pagination animations.
-   - CBZ: a paged image viewer — swipe/arrow-key through the archive's images
-     in order, fit-to-width, with a page counter.
-2. Add a "Book Detail" screen (metadata, cover, an "Open"/"Read" button) that
-   sits between the library grid and the reader, per the plan's architecture.
-3. Track basic reading progress (current page / percentage) on the `Book`
-   model and persist it via LibraryStore so reopening a book resumes roughly
-   where you left off. Surface "Currently Reading" somewhere reasonable (a
-   filter or a section at the top of the grid) — this was an open question in
-   the plan; make the simplest reasonable call and note it in PLAN.md's open
-   questions section as resolved.
-4. Don't break the Phase 1/2 scan → import → grid flow.
+Both are presented as a `.sheet` from BookDetailView's `readerSheet`
+@ViewBuilder (see BookDetailView.swift — there's already an `.epub: EmptyView()`
+case there for you to replace), both take `let book: Book` plus
+`@EnvironmentObject private var library: LibraryStore`, both have a header
+(title, page indicator, close button) built from DesignTokens.serifFont/
+sansFont/Spacing/surface — reuse that exact header pattern rather than
+restyling, and both persist reading position via
+`library.updateProgress(for: book, progress:)` — the same method you'll call
+here (0.0–1.0, based on how you define "position" for EPUB — see below).
 
-Build and run after each reader type is wired up. Commit when all three
-formats open and display correctly.
+Build Sources/Stoa/Views/EPUBReaderView.swift:
+
+1. EPUBKit is already a dependency (resolved at 0.5.0, see
+   Stoa.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved)
+   and is already used for metadata extraction in
+   Sources/Stoa/Services/ImportPipeline.swift (`EPUBDocument(url:)`,
+   `.title`, `.author`, `.cover`) — read that file first to see the exact
+   API surface already proven to compile in this project. Use EPUBKit's
+   manifest/spine to get the ordered list of chapter HTML resources and
+   their file URLs (EPUBKit unpacks the EPUB to disk internally — inspect
+   the actual EPUBDocument properties in Xcode's Quick Help / jump-to-
+   definition before guessing at method names, since the exact spine/
+   manifest API isn't proven yet in this codebase the way the metadata
+   fields are).
+2. Render one chapter at a time in a `WKWebView` (wrapped via
+   `NSViewRepresentable`, same pattern as PDFReaderView's
+   `PDFKitRepresentedView` — a private struct with a Coordinator).
+   Load each chapter's HTML file directly via
+   `webView.loadFileURL(chapterURL, allowingReadAccessTo: ...)` so the
+   chapter's local CSS/images resolve. No custom pagination — chapter-level
+   navigation is enough for v1 (forward/back chapter, not forward/back
+   "page" within a chapter).
+3. Header: same layout as PDFReaderView/CBZReaderView (title left, close
+   button right). Instead of "Page X of Y", show "Chapter X of Y" where Y is
+   spine.count.
+4. Footer: prev/next chapter buttons (disable at the ends, same disabled-
+   state pattern as CBZReaderView's footer), matching CBZReaderView's
+   footer layout (buttons + a thin accent progress capsule) rather than
+   inventing new chrome.
+5. Progress: since there's no natural "page" for EPUB, use
+   `chapterIndex / (spine.count - 1)` as the progress value passed to
+   `library.updateProgress`, same idea as the other two readers' page-index
+   math. On open, resume at
+   `Int(round(book.readingProgress * (spine.count - 1)))` if
+   `book.readingProgress` is set, same pattern PDFReaderView/CBZReaderView
+   use in their `load()`/`openArchive()`.
+6. Update BookDetailView.swift: in `readerSheet`, replace the `case .epub:
+   EmptyView()` with `EPUBReaderView(book: book).environmentObject(library)`.
+   In `buttonsRow`, the primary button already branches on
+   `book.format == .pdf || book.format == .cbz` for "Read" vs "Open" — extend
+   that condition to include `.epub` now that there's a reader for it, so all
+   three formats say "Read" and open the in-app sheet, and none of them fall
+   through to `NSWorkspace.shared.open` anymore by default.
+7. Don't touch PDFReaderView.swift, CBZReaderView.swift, ScannerService,
+   LibraryStore, ImportPipeline, or the signing/entitlements setup.
+
+Build and run. Test with a real EPUB from the library grid — verify chapter
+navigation both directions and that closing and reopening the book resumes
+at roughly the same chapter. Commit when it works.
 ```
 
 ---
