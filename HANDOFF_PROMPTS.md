@@ -28,47 +28,158 @@ Documents/Desktop/Downloads, and lists found .epub/.pdf/.cbz files.
 
 ---
 
-## Prompt 1 — Phase 2: Import & Metadata
+## Prompt 1 — Phase 2: Import & Metadata (rewritten — supersedes the original)
+
+The version below replaces the original Prompt 1 in this file. That one was
+written before the design pass — it assumed a flat-list ContentView and no
+LibraryStore, which is stale now. Use only this version.
 
 ```
-I'm building a macOS SwiftUI app called Stoa, at
-~/Documents/Stoa. Read PLAN.md and README.md in that folder for
-full context. Phase 1 is done: ScannerService finds .epub/.pdf/.cbz files
-across Documents/Desktop/Downloads + user-added folders, and there's a
-placeholder flat-list UI (ContentView) plus a Book/DiscoveredFile model.
+I'm building a macOS SwiftUI app called Stoa, at ~/Documents/Stoa. Read
+PLAN.md, README.md, and this file's earlier prompts (up through the "Real
+design pass" one) for context — but trust the CODE on disk over any of the
+handoff prose if they ever disagree, since a few things have moved since
+those were written.
 
-Now build Phase 2 — Import & Metadata:
+Current real state, so you don't have to rediscover it: Phase 1 (scanning,
+permissions) is done. There's a full library grid (ContentView.swift) with
+a "Recently added" HeroBand, sidebar filtering by format/watched-folder,
+and a MattedCoverView that renders PDF covers as a colored mat with the
+real page thumbnail inset (loaded async via CoverThumbnailCache), while
+EPUB/CBZ currently fall back to a full-bleed gradient+monogram placeholder
+because there's no real cover extraction for them yet. DesignTokens.swift
+is the single source of truth for colors/type/spacing — an indigo-violet
+accent, warm dark/light backgrounds, serif headers. BookDetailView still
+shows a plain format-icon placeholder cover (not matted) and hardcoded
+fake tags ["Fiction", "Science Fiction"] — both need fixing in this phase.
+Everything today operates on `DiscoveredFile` (raw scan result, no real
+metadata) — there is no persisted library yet, so nothing survives a
+relaunch; a "rescan" recomputes the whole grid from disk every time.
 
-1. Add EPUBKit as a Swift Package dependency (add it to project.yml's
-   `packages` + target `dependencies`, then re-run `xcodegen generate`).
-2. Create an `ImportPipeline` service (Sources/Stoa/Services/) that,
-   given a `DiscoveredFile`, produces a `Book`:
-   - EPUB: use EPUBKit to pull title, author, language, and cover image.
-   - PDF: use PDFKit — title from document metadata (fall back to filename),
-     cover = a thumbnail image rendered from the first page.
-   - CBZ: unzip (Foundation's built-in Compression or a small zip reader),
-     grab the first image entry as the cover, use the filename as the title.
-   - Compute a content hash (e.g. SHA256 of the file) for dedup — skip files
-     whose hash is already in the library.
-   - Store the cover image on disk under the Library folder as a small JPEG/PNG,
-     save its relative path on the Book record.
-3. Create a `LibraryStore` backed by SwiftData (`@Model` on a persisted version
-   of `Book`) that lives at a "Library folder" location — for now default this
-   to `~/Documents/StoaSync` (Phase 4 will make this configurable
-   between iCloud Drive / Google Drive). Books are copied into this folder on
-   import (leave originals in place per the plan's open question).
-4. Wire the scanner's `discoveredFiles` into the import pipeline: after a scan,
-   files not already in the LibraryStore get imported automatically. Show
-   progress in the UI (a simple progress indicator while importing).
-5. Replace the flat-list ContentView with a real library grid view: covers,
-   title/author underneath, search bar (already have `.searchable`), and a
-   sort menu (title / author / recently added / format).
-6. Keep everything else (ScannerService, SettingsView, folder management)
-   working as-is — only extend, don't rewrite it unless something is actually
-   broken.
+Phase 2 — Import & Metadata — turns that raw scan into a real, persistent
+library:
 
-Build and run after each major step. Commit to git with a clear message when
-Phase 2 is working end-to-end (scan → import → grid view with real covers).
+1. Bump the deployment target to macOS 14 (project.yml:
+   `options.deploymentTarget.macOS` and `targets.Stoa.settings.base.
+   MACOSX_DEPLOYMENT_TARGET`, both to "14.0") — needed for SwiftData, which
+   is the right call here (built into the OS, no extra package, versus
+   GRDB). Re-run `xcodegen generate` after.
+
+2. Add two Swift Package dependencies to project.yml's `packages` +
+   target `dependencies` (then `xcodegen generate`):
+   - EPUBKit (https://github.com/witekbobrowski/EPUBKit) for EPUB
+     metadata/manifest/cover parsing.
+   - ZIPFoundation (https://github.com/weichsel/ZIPFoundation) for reading
+     CBZ archive entries — don't hand-roll a zip reader or shell out to
+     /usr/bin/unzip, this is a well-tested standard choice.
+
+3. Convert `Book` (Sources/Stoa/Models/Book.swift) from a plain struct to
+   a SwiftData `@Model` class. Keep its existing fields (title, author,
+   format, sourceURL, libraryURL, coverImagePath, addedAt, tags,
+   readingProgress) — this struct was deliberately shaped for exactly this
+   in Phase 1, don't redesign it. Add a `contentHash: String` field for
+   dedup (see step 5).
+
+4. Create `LibraryStore` (Sources/Stoa/Services/LibraryStore.swift): owns
+   the SwiftData `ModelContainer`/`ModelContext`, and the "Library folder"
+   location — default this to `~/Documents/StoaLibrary` for now (Phase 4
+   makes this configurable between iCloud Drive / Google Drive; don't
+   build that picker yet, just isolate the path behind one property so
+   Phase 4 is a small change). Expose `@Published var books: [Book]`
+   (LibraryStore itself should be an `ObservableObject` / `@MainActor`,
+   same pattern as ScannerService) plus `add(_:)`, `remove(_:)`,
+   `contains(hash:) -> Bool`, and `updateTags(for:tags:)`.
+
+5. Create `ImportPipeline` (Sources/Stoa/Services/ImportPipeline.swift)
+   that, given a `DiscoveredFile`, produces a `Book`:
+   - Compute a SHA256 content hash of the file first (CryptoKit, built
+     in — no package needed). If `LibraryStore.contains(hash:)` is already
+     true, skip the file entirely — this is the dedup check, and it means
+     a file that got renamed or moved doesn't get re-imported as a
+     duplicate.
+   - EPUB: EPUBKit for title/author/language + cover image data.
+   - PDF: PDFKit — title from document metadata, falling back to the
+     filename if metadata has none; cover = a thumbnail rendered from
+     page 1 (you can factor this out of CoverThumbnailCache's existing
+     `renderPDFThumbnail` rather than duplicating that logic — that
+     in-memory cache is for the grid's live display; ImportPipeline needs
+     to additionally persist a copy to disk, see next bullet).
+   - CBZ: ZIPFoundation — find the first image entry in filename order,
+     that's the cover; use the filename (minus extension) as the title.
+   - For EPUB and CBZ, save the extracted cover image to disk as a JPEG
+     under the Library folder (e.g. `StoaLibrary/Covers/<hash>.jpg`),
+     and set `Book.coverImagePath` to that relative path. PDFs don't need
+     a saved cover file — MattedCoverView already renders PDFs live from
+     CoverThumbnailCache, keep that as-is, just leave `coverImagePath`
+     nil for PDFs.
+   - Do NOT move or copy the original source file into the Library folder
+     in this phase — PLAN.md's open question about copy-vs-reference
+     stays open; `Book.sourceURL` continues to point at wherever the file
+     already lives, `Book.libraryURL` stays nil for now. Keep that
+     decision easy to change later (i.e. still copy/persist cover art
+     images, just not the source ebook file itself).
+
+6. Wire scanning into import: after `ScannerService.scan()` completes,
+   for each `DiscoveredFile` not already in the library (by content hash),
+   run it through `ImportPipeline` and add the resulting `Book` to
+   `LibraryStore`. Do this somewhere sensible — either ContentView's
+   `.task` block driving both scan and import in sequence, or a small
+   coordinator — and show a progress indicator while importing runs (the
+   grid should already show whatever's in LibraryStore immediately, with
+   new books appearing as they finish importing, not a blocking spinner
+   that hides everything).
+
+7. Update the UI to read from `LibraryStore.books` (real `Book` records)
+   instead of `scanner.discoveredFiles` (raw `DiscoveredFile`) for
+   anything the user sees as "the library" — the grid, the hero band, the
+   detail view, the sidebar's format/folder filtering. Concretely:
+   - `HeroBand`, `BookCoverTile`, and `MattedCoverView` currently take a
+     `file: DiscoveredFile` — change them to take a `book: Book` instead.
+     `MattedCoverView`'s matted-vs-full-bleed branch was written as "PDF
+     gets matted, everything else is full-bleed placeholder" specifically
+     because EPUB/CBZ had no real covers yet — now that they do, EPUB/CBZ
+     with a non-nil `coverImagePath` should render that real image
+     full-bleed (it's genuine cover art, no matting needed), and only
+     fall back to the gradient+monogram placeholder if the cover image
+     is missing or fails to load. PDF keeps the exact matted treatment
+     as-is.
+   - `BookDetailView` currently takes `file: DiscoveredFile` and shows a
+     plain icon-on-gradient placeholder cover — switch it to take a
+     `book: Book` and reuse `MattedCoverView` for its cover section too
+     (same treatment as the grid, just larger), instead of the separate
+     `coverGradient(for:)` placeholder it has now.
+   - Replace `BookDetailView`'s hardcoded `["Fiction", "Science Fiction"]`
+     tags with `book.tags`, plus simple add/remove UI (a text field +
+     "Add" button, and a small "x" on each tag pill to remove it),
+     calling `LibraryStore.updateTags(for:tags:)`.
+   - Sidebar format/folder filtering and search currently filter
+     `DiscoveredFile` — move that filtering logic to operate on `Book`
+     instead (same rules: format match, or folder-path prefix against
+     `book.sourceURL`).
+   - `NavigationLink`/`.navigationDestination` currently route on
+     `DiscoveredFile` — switch the value type to `Book` (it'll need
+     `Identifiable`/`Hashable`, which SwiftData `@Model` gives you for
+     free via its persistent identifier plus `Hashable` conformance you
+     add).
+   Keep every visual detail exactly as it is today — hero band layout,
+   matted-cover shadow/badge/skeleton, sidebar styling, accent color,
+   Settings — this step is a data-source change, not a redesign.
+
+8. Add a sort menu to the toolbar (title / author / recently added /
+   format) operating on `LibraryStore.books` — mentioned in the original
+   plan, not built yet.
+
+9. Keep ScannerService, SettingsView, and folder management working
+   exactly as they are — they're the scan/permissions layer, Phase 2 only
+   touches what happens after a scan.
+
+Build and run after each numbered step, not just at the end — steps 3-4
+(SwiftData model + store) are the riskiest part to get wrong, verify that
+compiles and a book can be added/persisted before moving to the import
+pipeline. Commit to git with a clear message once scan → import → real
+persisted library with real covers is working end-to-end, and again after
+relaunching the app to confirm the library survives a restart (this is the
+actual point of Phase 2 — right now nothing does).
 ```
 
 ---
