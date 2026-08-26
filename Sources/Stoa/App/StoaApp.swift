@@ -3,11 +3,13 @@ import SwiftUI
 @main
 struct StoaApp: App {
     @StateObject private var scanner = ScannerService()
+    @StateObject private var library = LibraryStore()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(scanner)
+                .environmentObject(library)
                 .frame(minWidth: 720, minHeight: 480)
                 .background(DesignTokens.background.ignoresSafeArea())
         }
@@ -20,6 +22,7 @@ struct StoaApp: App {
         Settings {
             SettingsView()
                 .environmentObject(scanner)
+                .environmentObject(library)
         }
     }
 }

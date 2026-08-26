@@ -4,10 +4,12 @@ import AppKit
 // MARK: - BookDetailView
 
 /// Two-column book detail: large cover on the left, metadata on the right.
-/// Shows when a book is opened from the library grid.
+/// Now accepts a `Book` (persisted via SwiftData) instead of a raw `DiscoveredFile`.
 struct BookDetailView: View {
-    let file: DiscoveredFile
+    let book: Book
+    @EnvironmentObject private var library: LibraryStore
     @Environment(\.colorScheme) private var colorScheme
+    @State private var newTagText = ""
 
     var body: some View {
         ScrollView {
@@ -18,48 +20,28 @@ struct BookDetailView: View {
             .padding(DesignTokens.Spacing.xl)
         }
         .background(DesignTokens.background.ignoresSafeArea())
-        .navigationTitle(file.url.deletingPathExtension().lastPathComponent)
+        .navigationTitle(book.title)
     }
 
     // MARK: - Cover (left column)
 
     private var coverSection: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: DesignTokens.Detail.coverCornerRadius)
-                .fill(DesignTokens.coverGradient(for: file.format))
-                .frame(width: DesignTokens.Detail.coverWidth)
-                .aspectRatio(DesignTokens.Detail.coverAspectRatio, contentMode: .fit)
-                .overlay(
-                    RoundedRectangle(cornerRadius: DesignTokens.Detail.coverCornerRadius)
-                        .stroke(.primary.opacity(0.06), lineWidth: 0.5)
-                )
-
-            VStack(spacing: DesignTokens.Spacing.xs) {
-                Image(systemName: file.format.systemImage)
-                    .font(.system(size: 48, weight: .light))
-                    .foregroundStyle(.white.opacity(0.9))
-
-                Text(file.format.rawValue.uppercased())
-                    .font(DesignTokens.sansFont(size: 14, weight: .semibold))
-                    .tracking(1.0)
-                    .foregroundStyle(.white.opacity(0.7))
-            }
-        }
-        .shadow(
-            color: DesignTokens.Shadow.heavy(colorScheme: colorScheme).color,
-            radius: DesignTokens.Shadow.heavy(colorScheme: colorScheme).radius,
-            x: 0,
-            y: DesignTokens.Shadow.heavy(colorScheme: colorScheme).y
-        )
-        .fixedSize()
+        MattedCoverView(book: book, cornerRadius: DesignTokens.Detail.coverCornerRadius, showBadge: false)
+            .frame(width: DesignTokens.Detail.coverWidth)
+            .shadow(
+                color: DesignTokens.Shadow.heavy(colorScheme: colorScheme).color,
+                radius: DesignTokens.Shadow.heavy(colorScheme: colorScheme).radius,
+                x: 0,
+                y: DesignTokens.Shadow.heavy(colorScheme: colorScheme).y
+            )
+            .fixedSize()
     }
 
     // MARK: - Metadata (right column)
 
     private var metadataSection: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
-            // Title: 32pt serif .bold, tight tracking, .primary
-            Text(file.url.deletingPathExtension().lastPathComponent)
+            Text(book.title)
                 .font(DesignTokens.serifFont(
                     size: DesignTokens.Detail.Title.fontSize,
                     weight: .bold
@@ -68,12 +50,13 @@ struct BookDetailView: View {
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // Author: 16pt, .secondary
-            Text("Unknown Author")
-                .font(DesignTokens.sansFont(size: DesignTokens.Detail.Author.fontSize))
-                .foregroundStyle(.secondary)
+            if let author = book.author, !author.isEmpty {
+                Text(author)
+                    .font(DesignTokens.sansFont(size: DesignTokens.Detail.Author.fontSize))
+                    .foregroundStyle(.secondary)
+            }
 
-            tagPillsRow
+            tagSection
             buttonsRow
 
             Divider()
@@ -84,36 +67,85 @@ struct BookDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Tag Pills
+    // MARK: - Tags (real, from Book.tags)
 
-    /// 12pt .semibold, .secondary, 6%-opacity black bg (8% dark),
-    /// 4pt v / 10pt h padding, 8pt gaps, rounded capsule
-    private var tagPillsRow: some View {
-        HStack(spacing: DesignTokens.Detail.Tag.gap) {
-            ForEach(["Fiction", "Science Fiction"], id: \.self) { tag in
-                Text(tag)
+    private var tagSection: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            HStack(spacing: DesignTokens.Detail.Tag.gap) {
+                ForEach(book.tags, id: \.self) { tag in
+                    tagPill(tag)
+                }
+            }
+
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                TextField("Add tag\u{2026}", text: $newTagText)
+                    .textFieldStyle(.plain)
                     .font(DesignTokens.sansFont(
                         size: DesignTokens.Detail.Tag.fontSize,
-                        weight: .semibold
+                        weight: .medium
                     ))
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, DesignTokens.Detail.Tag.paddingV)
-                    .padding(.horizontal, DesignTokens.Detail.Tag.paddingH)
-                    .background(
-                        Color.black.opacity(colorScheme == .dark ? 0.08 : 0.06),
-                        in: Capsule()
-                    )
+                    .frame(maxWidth: 100)
+                    .onSubmit {
+                        addTag()
+                    }
+
+                if !newTagText.isEmpty {
+                    Button {
+                        addTag()
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(DesignTokens.accent)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
+    }
+
+    private func tagPill(_ tag: String) -> some View {
+        HStack(spacing: 4) {
+            Text(tag)
+                .font(DesignTokens.sansFont(
+                    size: DesignTokens.Detail.Tag.fontSize,
+                    weight: .semibold
+                ))
+                .foregroundStyle(.secondary)
+
+            Button {
+                removeTag(tag)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, DesignTokens.Detail.Tag.paddingV)
+        .padding(.horizontal, DesignTokens.Detail.Tag.paddingH)
+        .background(
+            Color.black.opacity(colorScheme == .dark ? 0.08 : 0.06),
+            in: Capsule()
+        )
+    }
+
+    private func addTag() {
+        let trimmed = newTagText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !book.tags.contains(trimmed) else { return }
+        library.updateTags(for: book, tags: book.tags + [trimmed])
+        newTagText = ""
+    }
+
+    private func removeTag(_ tag: String) {
+        library.updateTags(for: book, tags: book.tags.filter { $0 != tag })
     }
 
     // MARK: - Buttons
 
     private var buttonsRow: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
-            // Primary: accent bg, white text, 14pt .semibold
             Button {
-                NSWorkspace.shared.open(file.url)
+                NSWorkspace.shared.open(book.sourceURL)
             } label: {
                 Label("Open", systemImage: "book")
                     .font(DesignTokens.sansFont(
@@ -128,9 +160,8 @@ struct BookDetailView: View {
             }
             .buttonStyle(.plain)
 
-            // Secondary: outlined, 1pt hairline, .secondary text
             Button {
-                NSWorkspace.shared.activateFileViewerSelecting([file.url])
+                NSWorkspace.shared.activateFileViewerSelecting([book.sourceURL])
             } label: {
                 Label("Show in Finder", systemImage: "folder")
                     .font(DesignTokens.sansFont(
@@ -152,23 +183,21 @@ struct BookDetailView: View {
 
     // MARK: - Metadata Grid (2x2)
 
-    /// Labels: 11pt .semibold uppercase .tertiary + tracking.
-    /// Values: 14pt .primary.
     private var metadataGrid: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
             HStack(alignment: .top, spacing: DesignTokens.Spacing.xxl) {
-                metaItem(label: "FORMAT", value: file.format.rawValue.uppercased())
+                metaItem(label: "FORMAT", value: book.format.rawValue.uppercased())
                 metaItem(
                     label: "SIZE",
-                    value: ByteCountFormatter.string(fromByteCount: file.sizeBytes, countStyle: .file)
+                    value: ByteCountFormatter.string(fromByteCount: book.sizeBytes, countStyle: .file)
                 )
             }
 
             HStack(alignment: .top, spacing: DesignTokens.Spacing.xxl) {
-                metaItem(label: "LOCATION", value: file.url.deletingLastPathComponent().lastPathComponent)
+                metaItem(label: "SOURCE", value: book.sourceURL.deletingLastPathComponent().lastPathComponent)
                 metaItem(
-                    label: "MODIFIED",
-                    value: file.modifiedAt?.formatted(date: .abbreviated, time: .omitted) ?? "Unknown"
+                    label: "ADDED",
+                    value: book.addedAt.formatted(date: .abbreviated, time: .omitted)
                 )
             }
 
@@ -198,7 +227,6 @@ struct BookDetailView: View {
 
     // MARK: - Progress Row
 
-    /// 3pt tall rounded bar: track at 8% black opacity, fill in accent color
     private func progressRow() -> some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
             Text("PROGRESS")
@@ -216,20 +244,28 @@ struct BookDetailView: View {
                         .fill(Color.black.opacity(DesignTokens.Detail.ProgressBar.trackOpacity))
                         .frame(height: DesignTokens.Detail.ProgressBar.height)
 
-                    // 0% fill — will show real progress when available
+                    let progress = book.readingProgress ?? 0
                     Capsule()
                         .fill(DesignTokens.accent)
-                        .frame(width: 0, height: DesignTokens.Detail.ProgressBar.height)
+                        .frame(
+                            width: geo.size.width * progress,
+                            height: DesignTokens.Detail.ProgressBar.height
+                        )
                 }
             }
             .frame(height: DesignTokens.Detail.ProgressBar.height)
 
-            Text("Not started")
+            Text(progressText)
                 .font(DesignTokens.sansFont(
                     size: DesignTokens.Detail.MetaValue.fontSize
                 ))
                 .foregroundStyle(.secondary)
         }
+    }
+
+    private var progressText: String {
+        guard let progress = book.readingProgress else { return "Not started" }
+        return "\(Int(progress * 100))% complete"
     }
 }
 
@@ -237,13 +273,12 @@ struct BookDetailView: View {
 
 #Preview {
     NavigationStack {
-        BookDetailView(
-            file: DiscoveredFile(
-                url: URL(fileURLWithPath: "/Users/test/Book.epub"),
-                format: .epub,
-                sizeBytes: 2_500_000,
-                modifiedAt: Date()
-            )
-        )
+        BookDetailView(book: Book(
+            title: "Sample Book",
+            author: "Author Name",
+            format: .pdf,
+            sourceURL: URL(fileURLWithPath: "/Users/test/Book.pdf")
+        ))
+        .environmentObject(LibraryStore())
     }
 }

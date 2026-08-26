@@ -1,24 +1,26 @@
 import Foundation
+import SwiftData
 
-/// Full library record. Phase 1 does not populate most of these fields yet —
-/// this type exists now so Phase 2 (ImportPipeline + LibraryStore) has a
-/// stable shape to build against.
+/// Full library record backed by SwiftData.
 ///
-/// TODO(Phase 2): back this with SwiftData or GRDB instead of being a plain struct.
-struct Book: Identifiable, Hashable {
-    let id: UUID
+/// Phase 2 converts this from a plain struct to a `@Model` so the library
+/// persists across relaunches via SwiftData's on-disk SQLite store.
+@Model
+final class Book: Hashable {
     var title: String
     var author: String?
-    var format: BookFormat
-    var sourceURL: URL
-    var libraryURL: URL?      // location inside the Library folder, once imported
+    var formatRaw: String     // stored as String for SwiftData; computed `format` accessor below
+    var sourcePath: String    // sourceURL.path — stored as String because URL isn't Codable by SwiftData
+    var libraryPath: String?  // libraryURL?.path
     var coverImagePath: String?
     var addedAt: Date
     var tags: [String]
-    var readingProgress: Double?   // 0.0...1.0, optional for now
+    var readingProgress: Double?   // 0.0...1.0, optional
+    var contentHash: String        // SHA256 of file bytes, for dedup
+    var sizeBytes: Int64
+    var modifiedAt: Date?
 
     init(
-        id: UUID = UUID(),
         title: String,
         author: String? = nil,
         format: BookFormat,
@@ -27,17 +29,50 @@ struct Book: Identifiable, Hashable {
         coverImagePath: String? = nil,
         addedAt: Date = Date(),
         tags: [String] = [],
-        readingProgress: Double? = nil
+        readingProgress: Double? = nil,
+        contentHash: String = "",
+        sizeBytes: Int64 = 0,
+        modifiedAt: Date? = nil
     ) {
-        self.id = id
         self.title = title
         self.author = author
-        self.format = format
-        self.sourceURL = sourceURL
-        self.libraryURL = libraryURL
+        self.formatRaw = format.rawValue
+        self.sourcePath = sourceURL.path
+        self.libraryPath = libraryURL?.path
         self.coverImagePath = coverImagePath
         self.addedAt = addedAt
         self.tags = tags
         self.readingProgress = readingProgress
+        self.contentHash = contentHash
+        self.sizeBytes = sizeBytes
+        self.modifiedAt = modifiedAt
+    }
+
+    // MARK: - Hashable via persistentModelID
+
+    static func == (lhs: Book, rhs: Book) -> Bool {
+        lhs.persistentModelID == rhs.persistentModelID
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(persistentModelID)
+    }
+
+    // MARK: - Computed convenience
+
+    var format: BookFormat {
+        BookFormat(rawValue: formatRaw) ?? .pdf
+    }
+
+    var sourceURL: URL {
+        URL(fileURLWithPath: sourcePath)
+    }
+
+    var libraryURL: URL? {
+        libraryPath.map { URL(fileURLWithPath: $0) }
+    }
+
+    var coverImageURL: URL? {
+        coverImagePath.map { URL(fileURLWithPath: $0) }
     }
 }

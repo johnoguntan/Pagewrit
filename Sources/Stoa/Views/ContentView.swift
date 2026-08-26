@@ -4,51 +4,92 @@ import Foundation
 // MARK: - ContentView
 
 /// Library grid view with warm, luxurious palette and serif-accented typography.
-/// All values sourced from DesignTokens.
+/// All values sourced from DesignTokens. Reads from `LibraryStore.books` (real
+/// persisted `Book` records) rather than the scanner's raw `DiscoveredFile` list.
 struct ContentView: View {
     @EnvironmentObject private var scanner: ScannerService
+    @EnvironmentObject private var library: LibraryStore
     @Environment(\.colorScheme) private var colorScheme
     @State private var searchText = ""
     @State private var selectedFileID: String?
+    @State private var sortOrder: SortOption = .recentlyAdded
+    @State private var importTaskID: UUID?
 
-    // MARK: - Computed data
+    enum SortOption: String, CaseIterable, Identifiable {
+        case title
+        case author
+        case recentlyAdded
+        case format
 
-    /// Files scoped by the sidebar selection (a format, a watched folder, or
-    /// "All Books" when nil), then further narrowed by the search field.
-    private var filteredFiles: [DiscoveredFile] {
-        var files = scanner.discoveredFiles
+        var id: String { rawValue }
 
-        if let selectedFileID {
-            if let format = BookFormat(rawValue: selectedFileID) {
-                // A "Formats" row was picked.
-                files = files.filter { $0.format == format }
-            } else {
-                // A "Watched Folders" row was picked — its tag is the folder's
-                // path. Match files that live inside that folder (recursively).
-                let folderPath = selectedFileID.hasSuffix("/") ? selectedFileID : selectedFileID + "/"
-                files = files.filter { $0.url.path.hasPrefix(folderPath) }
+        var displayName: String {
+            switch self {
+            case .title: "Title"
+            case .author: "Author"
+            case .recentlyAdded: "Recently Added"
+            case .format: "Format"
             }
         }
 
-        guard !searchText.isEmpty else { return files }
-        return files.filter {
-            $0.url.lastPathComponent.localizedCaseInsensitiveContains(searchText)
+        var systemImage: String {
+            switch self {
+            case .title: "textformat.abc"
+            case .author: "person"
+            case .recentlyAdded: "clock"
+            case .format: "doc.plaintext"
+            }
         }
     }
 
-    private var booksByFormat: [(title: String, files: [DiscoveredFile])] {
-        let grouped = Dictionary(grouping: filteredFiles) { $0.format }
+    // MARK: - Computed data
+
+    /// Books scoped by the sidebar selection, then narrowed by search.
+    private var filteredBooks: [Book] {
+        var books = library.books
+
+        if let selectedFileID {
+            if let format = BookFormat(rawValue: selectedFileID) {
+                books = books.filter { $0.format == format }
+            } else {
+                let folderPath = selectedFileID.hasSuffix("/") ? selectedFileID : selectedFileID + "/"
+                books = books.filter { $0.sourcePath.hasPrefix(folderPath) }
+            }
+        }
+
+        guard !searchText.isEmpty else { return books }
+        return books.filter {
+            $0.title.localizedCaseInsensitiveContains(searchText)
+                || ($0.author?.localizedCaseInsensitiveContains(searchText) ?? false)
+        }
+    }
+
+    private var sortedBooks: [Book] {
+        switch sortOrder {
+        case .title:
+            filteredBooks.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+        case .author:
+            filteredBooks.sorted {
+                ($0.author ?? "ZZZ").localizedStandardCompare($1.author ?? "ZZZ") == .orderedAscending
+            }
+        case .recentlyAdded:
+            filteredBooks.sorted { $0.addedAt > $1.addedAt }
+        case .format:
+            filteredBooks.sorted { $0.formatRaw.localizedStandardCompare($1.formatRaw) == .orderedAscending }
+        }
+    }
+
+    private var booksByFormat: [(title: String, books: [Book])] {
+        let grouped = Dictionary(grouping: sortedBooks) { $0.format }
         return BookFormat.allCases.compactMap { format in
-            guard let files = grouped[format], !files.isEmpty else { return nil }
-            return (format.sectionTitle, files)
+            guard let books = grouped[format], !books.isEmpty else { return nil }
+            return (format.sectionTitle, books)
         }
     }
 
-    /// Most recently modified file across the whole library, for the hero band.
-    /// Independent of search/filter — this is a "welcome back" spotlight, not
-    /// a search result.
-    private var mostRecentFile: DiscoveredFile? {
-        scanner.discoveredFiles.max { ($0.modifiedAt ?? .distantPast) < ($1.modifiedAt ?? .distantPast) }
+    /// Most recently added book for the hero band.
+    private var mostRecentBook: Book? {
+        library.books.max { $0.addedAt > $1.addedAt }
     }
 
     // MARK: - Grid layout
@@ -69,26 +110,76 @@ struct ContentView: View {
             detailContent
         }
         .navigationTitle("Library")
-        .navigationDestination(for: DiscoveredFile.self) { file in
-            BookDetailView(file: file)
+        .navigationDestination(for: Book.self) { book in
+            BookDetailView(book: book)
+                .environmentObject(library)
         }
         .searchable(text: $searchText, prompt: "Search books")
         .toolbar {
-            ToolbarItem {
+            ToolbarItemGroup(placement: .primaryAction) {
+                sortMenu
                 Button {
-                    Task { await scanner.scan() }
+                    Task { await rescanAndImport() }
                 } label: {
                     Label("Rescan", systemImage: "arrow.clockwise")
                 }
-                .disabled(scanner.isScanning)
+                .disabled(scanner.isScanning || library.isImporting)
             }
         }
         .tint(DesignTokens.accent)
         .background(DesignTokens.background.ignoresSafeArea())
         .task {
-            if scanner.discoveredFiles.isEmpty {
-                await scanner.scan()
+            if library.books.isEmpty {
+                await rescanAndImport()
             }
+        }
+    }
+
+    // MARK: - Scan + Import pipeline
+
+    /// Scan for files, then import any new ones into the library.
+    private func rescanAndImport() async {
+        await scanner.scan()
+
+        let newFiles = scanner.discoveredFiles.filter { file in
+            !library.contains(hash: ImportPipeline.contentHash(for: file.url))
+        }
+
+        guard !newFiles.isEmpty else { return }
+
+        library.isImporting = true
+        importTaskID = UUID()
+
+        for (index, file) in newFiles.enumerated() {
+            library.importProgress = Double(index) / Double(newFiles.count)
+            if let book = await ImportPipeline.importFile(file, libraryFolder: library.libraryFolder) {
+                library.add(book)
+            }
+        }
+
+        library.importProgress = 1.0
+        library.isImporting = false
+    }
+
+    // MARK: - Sort Menu
+
+    private var sortMenu: some View {
+        Menu {
+            ForEach(SortOption.allCases) { option in
+                Button {
+                    sortOrder = option
+                } label: {
+                    Label(option.displayName, systemImage: option.systemImage)
+                        .overlay(alignment: .trailing) {
+                            if sortOrder == option {
+                                Image(systemName: "checkmark")
+                                    .padding(.trailing, -20)
+                            }
+                        }
+                }
+            }
+        } label: {
+            Label(sortOrder.displayName, systemImage: sortOrder.systemImage)
         }
     }
 
@@ -96,13 +187,6 @@ struct ContentView: View {
 
     private var sidebar: some View {
         List(selection: $selectedFileID) {
-            // App mark + Library row
-            //
-            // NOTE: this row deliberately does NOT use .tag(nil as String?).
-            // SwiftUI's List(selection:) with an Optional binding has a known
-            // quirk where tapping a nil-tagged row doesn't reliably clear the
-            // selection back to nil — it only reliably moves TO a non-nil tag.
-            // A manual tap handler sidesteps that entirely.
             Section {
                 sidebarRow(
                     title: "All Books",
@@ -151,8 +235,6 @@ struct ContentView: View {
 
     // MARK: - Sidebar App Mark
 
-    /// 28x28 rounded-square filled with accent, containing a book SF Symbol,
-    /// next to "Stoa" in serif at ~17pt semibold.
     private var sidebarAppMark: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
             Image(systemName: "books.vertical.fill")
@@ -204,7 +286,6 @@ struct ContentView: View {
 
     // MARK: - Sidebar Section Label
 
-    /// 11pt, .semibold, positive tracking, .tertiary, uppercase
     private func sidebarSectionLabel(_ title: String) -> some View {
         Text(title)
             .font(DesignTokens.sansFont(
@@ -225,18 +306,28 @@ struct ContentView: View {
                     .padding(.vertical, DesignTokens.Spacing.lg)
             }
 
+            if library.isImporting && library.importProgress < 1.0 {
+                ProgressView(value: library.importProgress) {
+                    Text("Importing\u{2026}")
+                        .font(DesignTokens.sansFont(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, DesignTokens.Spacing.xl)
+                .padding(.top, DesignTokens.Spacing.xs)
+            }
+
             if let error = scanner.lastScanError {
                 Text(error)
                     .foregroundStyle(.red)
                     .padding(.vertical, DesignTokens.Spacing.lg)
             }
 
-            if filteredFiles.isEmpty && !scanner.isScanning {
+            if sortedBooks.isEmpty && !scanner.isScanning && !library.isImporting {
                 emptyState
             } else {
                 ScrollView {
-                    if searchText.isEmpty, let mostRecent = mostRecentFile {
-                        HeroBand(file: mostRecent)
+                    if searchText.isEmpty, let mostRecent = mostRecentBook {
+                        HeroBand(book: mostRecent)
                             .padding(.horizontal, DesignTokens.Spacing.xl)
                             .padding(.top, DesignTokens.Spacing.lg)
                     }
@@ -244,16 +335,16 @@ struct ContentView: View {
                     LazyVGrid(columns: columns, spacing: DesignTokens.Grid.spacing) {
                         ForEach(booksByFormat, id: \.title) { section in
                             Section {
-                                ForEach(section.files) { file in
-                                    NavigationLink(value: file) {
-                                        BookCoverTile(file: file)
+                                ForEach(section.books) { book in
+                                    NavigationLink(value: book) {
+                                        BookCoverTile(book: book)
                                     }
                                     .buttonStyle(.plain)
                                 }
                             } header: {
                                 sectionHeader(
                                     section.title,
-                                    count: section.files.count
+                                    count: section.books.count
                                 )
                             }
                         }
@@ -268,7 +359,6 @@ struct ContentView: View {
 
     // MARK: - Section Header
 
-    /// 26pt serif .bold, tight tracking, .primary, trailing count in 13pt .tertiary
     private func sectionHeader(_ title: String, count: Int) -> some View {
         HStack(alignment: .lastTextBaseline, spacing: DesignTokens.Spacing.xs) {
             Text(title)
@@ -314,23 +404,17 @@ struct ContentView: View {
 
 // MARK: - HeroBand
 
-/// Full-width spotlight above the grid: the single "recently added" book, big.
-/// Once Phase 3 adds reading-progress tracking this becomes a "Continue
-/// Reading" variant (progress bar + Resume) for the last-opened book instead
-/// of the last-added one — same shape, different data source.
+/// Full-width spotlight above the grid: the most recently added book, big.
+/// Structured as a HeroState enum so Phase 3 can swap in a "Continue Reading"
+/// variant (progress bar + Resume) without rewriting the view.
 struct HeroBand: View {
-    let file: DiscoveredFile
+    let book: Book
     @Environment(\.colorScheme) private var colorScheme
 
-    private var title: String {
-        file.url.deletingPathExtension().lastPathComponent
-    }
-
     private var relativeAdded: String {
-        guard let date = file.modifiedAt else { return "" }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+        return formatter.localizedString(for: book.addedAt, relativeTo: Date())
     }
 
     var body: some View {
@@ -342,8 +426,6 @@ struct HeroBand: View {
                         .stroke(.primary.opacity(0.08), lineWidth: 1)
                 )
 
-            // The one "wow" moment on this screen — a single soft accent glow.
-            // Deliberately not repeated anywhere else on the page.
             RadialGradient(
                 colors: [DesignTokens.accent.opacity(DesignTokens.Hero.glowOpacity), .clear],
                 center: .topLeading,
@@ -353,7 +435,7 @@ struct HeroBand: View {
             .allowsHitTesting(false)
 
             HStack(alignment: .center, spacing: DesignTokens.Spacing.xl) {
-                MattedCoverView(file: file, cornerRadius: 10)
+                MattedCoverView(book: book, cornerRadius: 10)
                     .frame(width: DesignTokens.Hero.coverWidth)
                     .shadow(
                         color: .black.opacity(colorScheme == .dark ? 0.5 : 0.25),
@@ -370,7 +452,7 @@ struct HeroBand: View {
                         .foregroundStyle(.tertiary)
                         .textCase(.uppercase)
 
-                    Text(title)
+                    Text(book.title)
                         .font(DesignTokens.serifFont(
                             size: DesignTokens.Hero.Title.fontSize,
                             weight: .semibold
@@ -379,13 +461,13 @@ struct HeroBand: View {
                         .foregroundStyle(.primary)
                         .lineLimit(2)
 
-                    Text("\(file.format.rawValue.uppercased()) \u{00b7} \(relativeAdded)")
+                    Text("\(book.format.rawValue.uppercased()) \u{00b7} \(relativeAdded)")
                         .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
                         .foregroundStyle(.secondary)
                         .padding(.bottom, DesignTokens.Spacing.xs)
 
                     Button {
-                        NSWorkspace.shared.open(file.url)
+                        NSWorkspace.shared.open(book.sourceURL)
                     } label: {
                         Text("Open")
                             .font(DesignTokens.sansFont(
@@ -417,17 +499,13 @@ struct HeroBand: View {
 
 /// Single cover-art tile in the library grid.
 struct BookCoverTile: View {
-    let file: DiscoveredFile
+    let book: Book
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
 
-    private var title: String {
-        file.url.deletingPathExtension().lastPathComponent
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            MattedCoverView(file: file)
+            MattedCoverView(book: book)
                 .shadow(
                     color: DesignTokens.Shadow.tight(colorScheme: colorScheme).color,
                     radius: DesignTokens.Shadow.tight(colorScheme: colorScheme).radius,
@@ -441,8 +519,7 @@ struct BookCoverTile: View {
                     y: DesignTokens.Shadow.soft(colorScheme: colorScheme).y
                 )
 
-            // Title: 13pt serif .semibold, .primary, 2-line max
-            Text(title)
+            Text(book.title)
                 .font(DesignTokens.serifFont(
                     size: DesignTokens.Grid.Title.fontSize,
                     weight: .semibold
@@ -450,8 +527,7 @@ struct BookCoverTile: View {
                 .foregroundStyle(.primary)
                 .lineLimit(2)
 
-            // Format: 12pt, .secondary
-            Text(file.format.rawValue.uppercased())
+            Text(book.format.rawValue.uppercased())
                 .font(DesignTokens.sansFont(size: DesignTokens.Grid.Author.fontSize))
                 .foregroundStyle(.secondary)
         }
@@ -470,15 +546,13 @@ struct BookCoverTile: View {
         .contentShape(Rectangle())
         .contextMenu {
             Button {
-                NSWorkspace.shared.open(file.url)
+                NSWorkspace.shared.open(book.sourceURL)
             } label: {
                 Label("Open", systemImage: "doc.text")
             }
 
             Button {
-                NSWorkspace.shared.activateFileViewerSelecting(
-                    [file.url]
-                )
+                NSWorkspace.shared.activateFileViewerSelecting([book.sourceURL])
             } label: {
                 Label("Show in Finder", systemImage: "folder")
             }
@@ -487,10 +561,7 @@ struct BookCoverTile: View {
 
             Button {
                 NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(
-                    file.url.path,
-                    forType: .string
-                )
+                NSPasteboard.general.setString(book.sourcePath, forType: .string)
             } label: {
                 Label("Copy Path", systemImage: "doc.on.doc")
             }
@@ -500,40 +571,29 @@ struct BookCoverTile: View {
 
 // MARK: - MattedCoverView
 
-/// The cover treatment shared by the grid and the hero band.
+/// The cover treatment shared by the grid, hero band, and detail view.
 ///
-/// PDFs render "matted": a per-book hashed gradient mat (same hash as the
-/// old placeholder gradient, so it stays visually consistent) with a warm
-/// paper-toned page inset in the center. The real PDF thumbnail, once
-/// loaded, fills that inset page — not the whole card — so even a plain
-/// business-document PDF reads as a book on a shelf instead of a raw page
-/// scan. While the thumbnail loads (or if it fails) the page shows a few
-/// skeleton line-bars standing in for text.
-///
-/// EPUB/CBZ don't have real cover-art extraction yet (Phase 2), so they
-/// keep the old full-bleed gradient + monogram placeholder. Once Phase 2
-/// lands real EPUB/CBZ cover art, that art is designed cover art and should
-/// render full-bleed here too — only a raw PDF page gets matted.
+/// PDFs render "matted": a per-book hashed gradient mat with a warm paper-toned
+/// page inset in the center. EPUB/CBZ with a real cover image render that image
+/// full-bleed. All formats fall back to gradient+monogram when no cover is available.
 struct MattedCoverView: View {
-    let file: DiscoveredFile
+    let book: Book
     var cornerRadius: CGFloat = DesignTokens.Grid.Cover.cornerRadius
     var showBadge: Bool = true
 
     @State private var thumbnail: NSImage?
     @State private var thumbnailLoaded = false
 
-    private var title: String {
-        file.url.deletingPathExtension().lastPathComponent
-    }
-
     private var monogram: String {
-        String(title.prefix(1)).uppercased()
+        String(book.title.prefix(1)).uppercased()
     }
 
     var body: some View {
         ZStack {
-            if file.format == .pdf {
+            if book.format == .pdf {
                 mattedPDF
+            } else if let coverURL = book.coverImageURL {
+                fullBleedCover(url: coverURL)
             } else {
                 fullBleedPlaceholder
             }
@@ -559,7 +619,7 @@ struct MattedCoverView: View {
 
     private var mattedPDF: some View {
         ZStack {
-            DesignTokens.placeholderGradient(for: file.url.lastPathComponent)
+            DesignTokens.placeholderGradient(for: book.sourcePath)
 
             GeometryReader { geo in
                 let paperSize = CGSize(
@@ -590,7 +650,7 @@ struct MattedCoverView: View {
         }
     }
 
-    /// A few rounded bars standing in for text while the real thumbnail loads.
+    /// Skeleton lines on the paper while the thumbnail loads.
     private var skeletonLines: some View {
         VStack(alignment: .leading, spacing: 5) {
             RoundedRectangle(cornerRadius: 2)
@@ -610,12 +670,26 @@ struct MattedCoverView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Full-bleed placeholder (EPUB / CBZ)
+    // MARK: - Full-bleed cover (EPUB/CBZ with real cover art)
 
-    /// Muted gradient (varied per book) with a large serif monogram.
+    private func fullBleedCover(url: URL) -> some View {
+        Group {
+            if thumbnailLoaded, let img = thumbnail {
+                Image(nsImage: img)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                fullBleedPlaceholder
+            }
+        }
+        .aspectRatio(DesignTokens.Grid.Cover.aspectRatio, contentMode: .fill)
+    }
+
+    // MARK: - Full-bleed placeholder (no cover available)
+
     private var fullBleedPlaceholder: some View {
         ZStack {
-            DesignTokens.placeholderGradient(for: file.url.lastPathComponent)
+            DesignTokens.placeholderGradient(for: book.sourcePath)
 
             Text(monogram)
                 .font(DesignTokens.serifFont(size: 48, weight: .semibold))
@@ -627,7 +701,7 @@ struct MattedCoverView: View {
     // MARK: - Format Badge
 
     private var formatBadge: some View {
-        Text(file.format.rawValue.uppercased())
+        Text(book.format.rawValue.uppercased())
             .font(DesignTokens.sansFont(
                 size: DesignTokens.Badge.fontSize,
                 weight: .bold
@@ -645,15 +719,27 @@ struct MattedCoverView: View {
     // MARK: - Thumbnail Loading
 
     private func loadThumbnail() {
-        // Only PDFs have a real-thumbnail source today (EPUB/CBZ need their
-        // own extractors, added in Phase 2).
-        guard file.format == .pdf else { return }
-
-        CoverThumbnailCache.shared.loadThumbnail(for: file.url) { image in
-            if let image {
-                withAnimation(.easeIn(duration: 0.25)) {
-                    thumbnail = image
-                    thumbnailLoaded = true
+        if book.format == .pdf {
+            // PDFs: use CoverThumbnailCache for live rendering
+            CoverThumbnailCache.shared.loadThumbnail(for: book.sourceURL) { image in
+                if let image {
+                    withAnimation(.easeIn(duration: 0.25)) {
+                        thumbnail = image
+                        thumbnailLoaded = true
+                    }
+                }
+            }
+        } else if let coverURL = book.coverImageURL {
+            // EPUB/CBZ with persisted cover art
+            DispatchQueue.global(qos: .userInitiated).async {
+                let img = NSImage(contentsOf: coverURL)
+                DispatchQueue.main.async {
+                    if let img {
+                        withAnimation(.easeIn(duration: 0.25)) {
+                            thumbnail = img
+                            thumbnailLoaded = true
+                        }
+                    }
                 }
             }
         }
@@ -665,4 +751,5 @@ struct MattedCoverView: View {
 #Preview {
     ContentView()
         .environmentObject(ScannerService())
+        .environmentObject(LibraryStore())
 }
