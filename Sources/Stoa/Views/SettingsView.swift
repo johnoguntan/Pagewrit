@@ -5,106 +5,103 @@ import AppKit
 /// Downloads), and remove ones she added before. Default folders are always
 /// scanned and aren't listed as removable here.
 ///
-/// Styled to match the rest of the app (DesignTokens) instead of the default
-/// system Form look Phase 1 shipped with.
+/// Styled to match the rest of the app (DesignTokens): elevated cards on a
+/// near-black surface, icon-accented section headers, real (not
+/// imperceptible) elevation contrast — see DesignTokens.elevatedSurface.
 struct SettingsView: View {
     @EnvironmentObject private var scanner: ScannerService
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-
-            ScrollView {
-                VStack(alignment: .leading, spacing: DesignTokens.Spacing.xl) {
-                    section(title: "Always scanned") {
-                        VStack(spacing: 1) {
-                            ForEach(scanner.defaultFolders, id: \.self) { folder in
-                                folderRow(path: folder.path, removable: false, onRemove: {})
-                            }
-                        }
-                    }
-
-                    section(title: "Additional folders") {
-                        VStack(spacing: 1) {
-                            if scanner.extraFolders.isEmpty {
-                                Text("No additional folders added.")
-                                    .font(DesignTokens.sansFont(size: 13))
-                                    .foregroundStyle(.tertiary)
-                                    .padding(.vertical, DesignTokens.Spacing.xs)
-                            }
-                            ForEach(scanner.extraFolders, id: \.self) { folder in
-                                folderRow(path: folder.path, removable: true) {
-                                    scanner.removeExtraFolder(folder)
-                                }
-                            }
-                        }
-
-                        addFolderButton
-                            .padding(.top, DesignTokens.Spacing.sm)
-                    }
-
-                    section(title: "Library") {
-                        HStack {
-                            rescanButton
-                            Spacer()
-                            if let lastScan = scanner.lastScanDate {
-                                Text("Last scanned \(lastScan.formatted(date: .abbreviated, time: .shortened))")
-                                    .font(DesignTokens.sansFont(size: 12))
-                                    .foregroundStyle(.tertiary)
-                            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xl) {
+                section(title: "Always scanned", icon: "checkmark.circle.fill", tint: DesignTokens.accent) {
+                    VStack(spacing: 2) {
+                        ForEach(scanner.defaultFolders, id: \.self) { folder in
+                            folderRow(path: folder.path, removable: false, onRemove: {})
                         }
                     }
                 }
-                .padding(DesignTokens.Spacing.xl)
+
+                section(title: "Additional folders", icon: "folder.badge.plus", tint: DesignTokens.formatColor(for: .cbz)) {
+                    VStack(spacing: 2) {
+                        if scanner.extraFolders.isEmpty {
+                            Text("No additional folders yet — add one below to widen the scan.")
+                                .font(DesignTokens.sansFont(size: 13))
+                                .foregroundStyle(.tertiary)
+                                .padding(.vertical, DesignTokens.Spacing.xs)
+                        }
+                        ForEach(scanner.extraFolders, id: \.self) { folder in
+                            folderRow(path: folder.path, removable: true) {
+                                scanner.removeExtraFolder(folder)
+                            }
+                        }
+                    }
+
+                    addFolderButton
+                        .padding(.top, DesignTokens.Spacing.sm)
+                }
+
+                section(title: "Library", icon: "arrow.triangle.2.circlepath", tint: DesignTokens.formatColor(for: .epub)) {
+                    HStack {
+                        rescanButton
+                        Spacer()
+                        if let lastScan = scanner.lastScanDate {
+                            Text("Last scanned \(lastScan.formatted(date: .abbreviated, time: .shortened))")
+                                .font(DesignTokens.sansFont(size: 12))
+                                .foregroundStyle(.tertiary)
+                        } else {
+                            Text("Not scanned yet")
+                                .font(DesignTokens.sansFont(size: 12))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                }
             }
+            .padding(DesignTokens.Spacing.xl)
         }
-        .frame(width: 480, height: 420)
+        .frame(width: 520, height: 460)
         .background(DesignTokens.background.ignoresSafeArea())
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack(spacing: DesignTokens.Spacing.xs) {
-            Image(systemName: "gearshape.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(DesignTokens.accent)
-            Text("Settings")
-                .font(DesignTokens.serifFont(size: 17, weight: .semibold))
-                .foregroundStyle(.primary)
-            Spacer()
-        }
-        .padding(.horizontal, DesignTokens.Spacing.xl)
-        .padding(.vertical, DesignTokens.Spacing.md)
-        .background(DesignTokens.surface)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(Color.primary.opacity(0.07))
-                .frame(height: 1)
-        }
     }
 
     // MARK: - Section
 
-    /// 11pt tracked uppercase label above a grouped, hairline-separated card —
-    /// same vocabulary as the sidebar's "WATCHED FOLDERS" / "FORMATS" labels.
-    private func section<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
-            Text(title)
-                .font(DesignTokens.sansFont(size: 11, weight: .semibold))
-                .tracking(0.5)
-                .foregroundStyle(.tertiary)
-                .textCase(.uppercase)
+    /// Icon-accented label above a grouped, elevated card. The icon chip
+    /// gives each section a small, distinct identity at a glance instead of
+    /// three visually-identical gray blocks.
+    private func section<Content: View>(
+        title: String,
+        icon: String,
+        tint: Color,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 20, height: 20)
+                    .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 6))
+
+                Text(title)
+                    .font(DesignTokens.sansFont(size: 12, weight: .semibold))
+                    .tracking(0.3)
+                    .foregroundStyle(.secondary)
+                    .textCase(.uppercase)
+            }
 
             VStack(alignment: .leading, spacing: 0) {
                 content()
             }
-            .padding(DesignTokens.Spacing.sm)
-            .background(DesignTokens.surface, in: RoundedRectangle(cornerRadius: 12))
+            .padding(DesignTokens.Spacing.md)
+            .background(DesignTokens.elevatedSurface, in: RoundedRectangle(cornerRadius: 12))
             .overlay(
                 RoundedRectangle(cornerRadius: 12)
-                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+                    .stroke(DesignTokens.hairline(colorScheme: colorScheme), lineWidth: 1)
+            )
+            .shadow(
+                color: .black.opacity(colorScheme == .dark ? 0.30 : 0.04),
+                radius: 14, x: 0, y: 4
             )
         }
     }
@@ -136,6 +133,8 @@ struct SettingsView: View {
             }
         }
         .padding(.vertical, DesignTokens.Spacing.xs)
+        .padding(.horizontal, DesignTokens.Spacing.xs)
+        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 6))
     }
 
     // MARK: - Buttons

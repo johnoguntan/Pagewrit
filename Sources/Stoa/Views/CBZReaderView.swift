@@ -14,6 +14,7 @@ struct CBZReaderView: View {
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var pagePaths: [String] = []
     @State private var currentPageIndex: Int = 0
     @State private var currentImage: NSImage?
@@ -76,7 +77,7 @@ struct CBZReaderView: View {
         .background(DesignTokens.surface)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(.primary.opacity(0.08))
+                .fill(DesignTokens.hairline(colorScheme: colorScheme))
                 .frame(height: 1)
         }
     }
@@ -167,7 +168,7 @@ struct CBZReaderView: View {
         .background(DesignTokens.surface)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(.primary.opacity(0.08))
+                .fill(DesignTokens.hairline(colorScheme: colorScheme))
                 .frame(height: 1)
         }
     }

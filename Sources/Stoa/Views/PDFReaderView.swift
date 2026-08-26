@@ -10,6 +10,7 @@ struct PDFReaderView: View {
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var document: PDFDocument?
     @State private var currentPageIndex: Int = 0
     @State private var pageCount: Int = 0
@@ -68,7 +69,7 @@ struct PDFReaderView: View {
         .background(DesignTokens.surface)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(.primary.opacity(0.08))
+                .fill(DesignTokens.hairline(colorScheme: colorScheme))
                 .frame(height: 1)
         }
     }

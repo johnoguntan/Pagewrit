@@ -15,6 +15,7 @@ struct EPUBReaderView: View {
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var epub: EPUBDocument?
     @State private var chapterURLs: [URL] = []
     @State private var chapterTitles: [String] = []
@@ -80,7 +81,7 @@ struct EPUBReaderView: View {
         .background(DesignTokens.surface)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(.primary.opacity(0.08))
+                .fill(DesignTokens.hairline(colorScheme: colorScheme))
                 .frame(height: 1)
         }
     }
@@ -127,7 +128,7 @@ struct EPUBReaderView: View {
         .background(DesignTokens.surface)
         .overlay(alignment: .top) {
             Rectangle()
-                .fill(.primary.opacity(0.08))
+                .fill(DesignTokens.hairline(colorScheme: colorScheme))
                 .frame(height: 1)
         }
     }

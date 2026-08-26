@@ -32,13 +32,25 @@ enum DesignTokens {
     static let accentSecondary = Color(light: NSColor(red: 0.729, green: 0.541, blue: 0.204, alpha: 1),
                                       dark: NSColor(red: 0.847, green: 0.663, blue: 0.361, alpha: 1))
 
-    /// Soft warm ivory / warm charcoal. Main window and detail content background.
+    /// Soft warm ivory / near-black. Main window and detail content background.
+    /// The dark value is deliberately much closer to true black than a
+    /// typical "dark gray" app background — that's what gives surface/card
+    /// colors somewhere to visibly separate to (see `surface` below).
     static let background = Color(light: NSColor(red: 0.973, green: 0.965, blue: 0.949, alpha: 1),
-                                 dark: NSColor(red: 0.110, green: 0.106, blue: 0.098, alpha: 1))
+                                 dark: NSColor(red: 0.043, green: 0.043, blue: 0.051, alpha: 1))
 
-    /// Slightly lighter warm surface. Sidebar panel and card/surface backgrounds.
+    /// Card / panel surface — one clear elevation step above `background`,
+    /// not a barely-there tint of it. In light mode this is a soft warm
+    /// paper tone; in dark mode it's a real ~9% jump off background, enough
+    /// to read as a distinct plane without the app going gray.
     static let surface = Color(light: NSColor(red: 0.984, green: 0.976, blue: 0.961, alpha: 1),
-                              dark: NSColor(red: 0.129, green: 0.122, blue: 0.114, alpha: 1))
+                              dark: NSColor(red: 0.098, green: 0.098, blue: 0.114, alpha: 1))
+
+    /// A further elevation step above `surface`, for floating/elevated
+    /// content — Settings sections, popovers, anything that should read as
+    /// "lifted off" the surface it sits on rather than blending into it.
+    static let elevatedSurface = Color(light: NSColor(red: 1.0, green: 0.996, blue: 0.988, alpha: 1),
+                                      dark: NSColor(red: 0.137, green: 0.137, blue: 0.157, alpha: 1))
 
     /// Warm paper tone for the inset "page" inside a matted PDF cover.
     /// Same value in both schemes on purpose — it represents a physical page,
@@ -268,6 +280,33 @@ enum DesignTokens {
         /// Heavy shadow on detail cover: radius 40, y 30, opacity ~0.40
         static func heavy(colorScheme: ColorScheme) -> (color: Color, radius: CGFloat, y: CGFloat) {
             (Color.black.opacity(0.40), 40, 30)
+        }
+    }
+}
+
+// MARK: - Hairline & Format Color
+
+extension DesignTokens {
+    /// A border/divider color that's actually visible in both schemes.
+    /// `.primary.opacity(0.07-0.08)` (the old approach) reads as pure black
+    /// at ~8% in light mode — fine — but the same 8% of *white* in dark mode
+    /// all but disappears against a near-black surface. This scales the
+    /// opacity per scheme instead of using one flat value for both.
+    static func hairline(colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? Color.white.opacity(0.11) : Color.black.opacity(0.08)
+    }
+
+    /// A distinct, desaturated identity color per format — used sparingly
+    /// (sidebar icons, format chips) as a spot of personality, not as a
+    /// wash across large surfaces.
+    static func formatColor(for format: BookFormat) -> Color {
+        switch format {
+        case .epub: Color(light: NSColor(red: 0.204, green: 0.478, blue: 0.663, alpha: 1),
+                          dark: NSColor(red: 0.443, green: 0.694, blue: 0.855, alpha: 1))
+        case .pdf: Color(light: NSColor(red: 0.749, green: 0.404, blue: 0.239, alpha: 1),
+                         dark: NSColor(red: 0.914, green: 0.596, blue: 0.408, alpha: 1))
+        case .cbz: Color(light: NSColor(red: 0.545, green: 0.353, blue: 0.667, alpha: 1),
+                         dark: NSColor(red: 0.769, green: 0.596, blue: 0.878, alpha: 1))
         }
     }
 }

@@ -188,7 +188,7 @@ struct ContentView: View {
     private var sidebar: some View {
         List(selection: $selectedFileID) {
             Section {
-                sidebarRow(
+                SidebarRow(
                     title: "All Books",
                     icon: "books.vertical",
                     isSelected: selectedFileID == nil
@@ -201,7 +201,7 @@ struct ContentView: View {
 
             Section(header: sidebarSectionLabel("WATCHED FOLDERS")) {
                 ForEach(scanner.allWatchedFolders, id: \.self) { folder in
-                    sidebarRow(
+                    SidebarRow(
                         title: folder.lastPathComponent,
                         icon: "folder",
                         isSelected: selectedFileID == folder.path
@@ -212,10 +212,11 @@ struct ContentView: View {
 
             Section(header: sidebarSectionLabel("FORMATS")) {
                 ForEach(BookFormat.allCases, id: \.self) { format in
-                    sidebarRow(
+                    SidebarRow(
                         title: format.sectionTitle,
                         icon: format.systemImage,
-                        isSelected: selectedFileID == format.rawValue
+                        isSelected: selectedFileID == format.rawValue,
+                        iconColor: DesignTokens.formatColor(for: format)
                     )
                     .tag(format.rawValue)
                 }
@@ -223,7 +224,7 @@ struct ContentView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .background(DesignTokens.surface.ignoresSafeArea())
+        .background(.ultraThinMaterial)
         .safeAreaInset(edge: .top) {
             sidebarAppMark
                 .padding(.horizontal, DesignTokens.Spacing.md)
@@ -262,26 +263,47 @@ struct ContentView: View {
 
     // MARK: - Sidebar Row
 
-    private func sidebarRow(title: String, icon: String, isSelected: Bool) -> some View {
-        HStack(spacing: DesignTokens.Sidebar.iconLabelGap) {
-            Image(systemName: icon)
-                .font(.system(size: DesignTokens.Sidebar.fontSize, weight: .medium))
-                .frame(width: 16)
-            Text(title)
-                .font(.system(size: DesignTokens.Sidebar.fontSize))
-                .fontWeight(isSelected ? .semibold : .regular)
-                .lineLimit(1)
-                .foregroundColor(isSelected ? DesignTokens.accent : .primary)
-            Spacer()
+    // MARK: - Sidebar Row
+
+    /// A single sidebar row: "All Books", a watched folder, or a format
+    /// filter. Format rows pass `iconColor` so EPUB/PDF/CBZ each carry a
+    /// small, consistent identity color — everything else uses `.primary`.
+    /// Has its own hover state so the sidebar gives feedback on mouse-over,
+    /// not just on click.
+    private struct SidebarRow: View {
+        let title: String
+        let icon: String
+        let isSelected: Bool
+        var iconColor: Color?
+
+        @State private var isHovered = false
+
+        var body: some View {
+            HStack(spacing: DesignTokens.Sidebar.iconLabelGap) {
+                Image(systemName: icon)
+                    .font(.system(size: DesignTokens.Sidebar.fontSize, weight: .medium))
+                    .foregroundStyle(isSelected ? DesignTokens.accent : (iconColor ?? .secondary))
+                    .frame(width: 16)
+                Text(title)
+                    .font(.system(size: DesignTokens.Sidebar.fontSize))
+                    .fontWeight(isSelected ? .semibold : .regular)
+                    .lineLimit(1)
+                    .foregroundColor(isSelected ? DesignTokens.accent : .primary)
+                Spacer()
+            }
+            .padding(.vertical, DesignTokens.Sidebar.rowPaddingV)
+            .padding(.horizontal, DesignTokens.Sidebar.rowPaddingH)
+            .background(
+                isSelected
+                    ? DesignTokens.accent.opacity(0.14)
+                    : (isHovered ? Color.primary.opacity(0.05) : Color.clear)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Sidebar.rowCornerRadius))
+            .animation(.easeOut(duration: 0.12), value: isHovered)
+            .onHover { hovering in
+                isHovered = hovering
+            }
         }
-        .padding(.vertical, DesignTokens.Sidebar.rowPaddingV)
-        .padding(.horizontal, DesignTokens.Sidebar.rowPaddingH)
-        .background(
-            isSelected
-                ? DesignTokens.accent.opacity(0.12)
-                : Color.clear
-        )
-        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Sidebar.rowCornerRadius))
     }
 
     // MARK: - Sidebar Section Label
@@ -423,7 +445,7 @@ struct HeroBand: View {
                 .fill(DesignTokens.surface)
                 .overlay(
                     RoundedRectangle(cornerRadius: DesignTokens.Hero.cornerRadius)
-                        .stroke(.primary.opacity(0.08), lineWidth: 1)
+                        .stroke(DesignTokens.hairline(colorScheme: colorScheme), lineWidth: 1)
                 )
 
             RadialGradient(
@@ -593,6 +615,7 @@ struct MattedCoverView: View {
     var cornerRadius: CGFloat = DesignTokens.Grid.Cover.cornerRadius
     var showBadge: Bool = true
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var thumbnail: NSImage?
     @State private var thumbnailLoaded = false
 
@@ -620,7 +643,7 @@ struct MattedCoverView: View {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         .overlay(
             RoundedRectangle(cornerRadius: cornerRadius)
-                .stroke(.primary.opacity(0.08), lineWidth: 0.5)
+                .stroke(DesignTokens.hairline(colorScheme: colorScheme), lineWidth: 0.5)
         )
         .onAppear {
             loadThumbnail()
