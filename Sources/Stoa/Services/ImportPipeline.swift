@@ -23,15 +23,25 @@ enum ImportPipeline {
 
     /// Import a single file. Returns nil if the file is a duplicate (already
     /// in the library by content hash) or if extraction fails completely.
+    ///
+    /// Pass `precomputedHash` when the caller already hashed this file this
+    /// scan pass (e.g. `classifyFile` did it moments ago) — avoids hashing
+    /// the same file's full contents twice per rescan.
     @MainActor
     static func importFile(
         _ file: DiscoveredFile,
-        libraryFolder: URL
+        libraryFolder: URL,
+        precomputedHash: String? = nil
     ) async -> Book? {
-        // 1. Compute content hash
-        let hash = await Task.detached(priority: .userInitiated) {
-            Self.contentHash(for: file.url)
-        }.value
+        // 1. Content hash — reuse if the caller already computed one
+        let hash: String
+        if let precomputedHash {
+            hash = precomputedHash
+        } else {
+            hash = await Task.detached(priority: .userInitiated) {
+                Self.contentHash(for: file.url)
+            }.value
+        }
 
         // 2. Extract metadata + cover off the main thread
         let result = await Task.detached(priority: .userInitiated) {
@@ -55,6 +65,52 @@ enum ImportPipeline {
             sizeBytes: file.sizeBytes,
             modifiedAt: file.modifiedAt
         )
+    }
+
+    /// Classify a file and return both the hash and classification result.
+    /// EPUB/CBZ return nil (skip classification). Only PDFs are scored.
+    @MainActor
+    static func classifyFile(
+        _ file: DiscoveredFile,
+        library: LibraryStore,
+        precomputedHash: String? = nil
+    ) async -> (hash: String, classification: BookClassification)? {
+        // 1. Content hash — reuse if the caller already computed one
+        let hash: String
+        if let precomputedHash {
+            hash = precomputedHash
+        } else {
+            hash = await Task.detached(priority: .userInitiated) {
+                Self.contentHash(for: file.url)
+            }.value
+        }
+
+        // 2. Skip if already classified
+        if let existing = library.classification(for: hash) {
+            return (hash, existing)
+        }
+
+        // 3. Skip if user previously dismissed
+        if library.dismissedHashes.contains(hash) {
+            return nil
+        }
+
+        // 4. Classify (returns nil for EPUB/CBZ — those bypass)
+        guard let result = BookClassifier.classify(file) else {
+            return nil
+        }
+
+        // 5. Persist the classification
+        let classification = BookClassification(
+            fileHash: hash,
+            score: result.score,
+            decision: result.decision,
+            sourcePath: file.url.path,
+            fileName: file.url.lastPathComponent
+        )
+        library.addClassification(classification)
+
+        return (hash, classification)
     }
 
     // MARK: - Content hash (SHA256 via CryptoKit)

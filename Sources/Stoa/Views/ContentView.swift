@@ -11,7 +11,6 @@ struct ContentView: View {
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.colorScheme) private var colorScheme
     @State private var searchText = ""
-    @State private var selectedFileID: String?
     @State private var sortOrder: SortOption = .recentlyAdded
     @State private var importTaskID: UUID?
 
@@ -48,12 +47,15 @@ struct ContentView: View {
     private var filteredBooks: [Book] {
         var books = library.books
 
-        if let selectedFileID {
-            if let format = BookFormat(rawValue: selectedFileID) {
+        switch sidebarSelection {
+        case .library, .needsReview, .none:
+            break  // show all books
+        case .folder(let path):
+            let folderPath = path.hasSuffix("/") ? path : path + "/"
+            books = books.filter { $0.sourcePath.hasPrefix(folderPath) }
+        case .format(let rawValue):
+            if let format = BookFormat(rawValue: rawValue) {
                 books = books.filter { $0.format == format }
-            } else {
-                let folderPath = selectedFileID.hasSuffix("/") ? selectedFileID : selectedFileID + "/"
-                books = books.filter { $0.sourcePath.hasPrefix(folderPath) }
             }
         }
 
@@ -137,12 +139,35 @@ struct ContentView: View {
 
     // MARK: - Scan + Import pipeline
 
-    /// Scan for files, then import any new ones into the library.
+    /// Scan for files, classify PDFs, and import books into the library.
+    /// EPUB/CBZ bypass classification; PDFs are scored and routed to
+    /// auto-add, needs-review, or auto-skip.
+    ///
+    /// Each file's content hash is computed exactly once per rescan (off the
+    /// main thread) and threaded through both the membership check and the
+    /// classify/import calls below, rather than re-hashing the same file's
+    /// full contents two or three times in a row.
     private func rescanAndImport() async {
         await scanner.scan()
 
-        let newFiles = scanner.discoveredFiles.filter { file in
-            !library.contains(hash: ImportPipeline.contentHash(for: file.url))
+        let hashedFiles: [(file: DiscoveredFile, hash: String)] = await withTaskGroup(of: (DiscoveredFile, String).self) { group in
+            for file in scanner.discoveredFiles {
+                group.addTask {
+                    let hash = await Task.detached(priority: .userInitiated) {
+                        ImportPipeline.contentHash(for: file.url)
+                    }.value
+                    return (file, hash)
+                }
+            }
+            var results: [(DiscoveredFile, String)] = []
+            for await pair in group {
+                results.append(pair)
+            }
+            return results
+        }
+
+        let newFiles = hashedFiles.filter { _, hash in
+            !library.contains(hash: hash) && library.classification(for: hash) == nil
         }
 
         guard !newFiles.isEmpty else { return }
@@ -150,10 +175,30 @@ struct ContentView: View {
         library.isImporting = true
         importTaskID = UUID()
 
-        for (index, file) in newFiles.enumerated() {
+        for (index, entry) in newFiles.enumerated() {
+            let (file, hash) = entry
             library.importProgress = Double(index) / Double(newFiles.count)
-            if let book = await ImportPipeline.importFile(file, libraryFolder: library.libraryFolder) {
-                library.add(book)
+
+            // Classify the file (EPUB/CBZ return nil — skip classification)
+            if let result = await ImportPipeline.classifyFile(file, library: library, precomputedHash: hash) {
+                switch result.classification.decision {
+                case .autoAdded, .userConfirmed:
+                    // Import as a book
+                    if let book = await ImportPipeline.importFile(file, libraryFolder: library.libraryFolder, precomputedHash: hash) {
+                        library.add(book)
+                    }
+                case .needsReview:
+                    // Leave in the review tray — don't import to library yet
+                    break
+                case .autoSkipped, .userDismissed:
+                    // Don't import
+                    break
+                }
+            } else {
+                // EPUB/CBZ or already classified — import directly
+                if let book = await ImportPipeline.importFile(file, libraryFolder: library.libraryFolder, precomputedHash: hash) {
+                    library.add(book)
+                }
             }
         }
 
@@ -183,19 +228,45 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Sidebar selection
+
+    enum SidebarSelection: Hashable {
+        case library
+        case needsReview
+        case folder(String)
+        case format(String)
+    }
+
+    @State private var sidebarSelection: SidebarSelection? = .library
+
     // MARK: - Sidebar
 
     private var sidebar: some View {
-        List(selection: $selectedFileID) {
+        List(selection: $sidebarSelection) {
             Section {
                 SidebarRow(
                     title: "All Books",
                     icon: "books.vertical",
-                    isSelected: selectedFileID == nil
+                    isSelected: sidebarSelection == .library
                 )
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    selectedFileID = nil
+                    sidebarSelection = .library
+                }
+                .tag(SidebarSelection.library)
+
+                if !library.needsReview.isEmpty {
+                    SidebarRow(
+                        title: "Needs Review",
+                        icon: "questionmark.diamond",
+                        isSelected: sidebarSelection == .needsReview,
+                        badge: "\(library.needsReview.count)"
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        sidebarSelection = .needsReview
+                    }
+                    .tag(SidebarSelection.needsReview)
                 }
             }
 
@@ -204,9 +275,9 @@ struct ContentView: View {
                     SidebarRow(
                         title: folder.lastPathComponent,
                         icon: "folder",
-                        isSelected: selectedFileID == folder.path
+                        isSelected: sidebarSelection == .folder(folder.path)
                     )
-                    .tag(folder.path)
+                    .tag(SidebarSelection.folder(folder.path))
                 }
             }
 
@@ -215,10 +286,10 @@ struct ContentView: View {
                     SidebarRow(
                         title: format.sectionTitle,
                         icon: format.systemImage,
-                        isSelected: selectedFileID == format.rawValue,
+                        isSelected: sidebarSelection == .format(format.rawValue),
                         iconColor: DesignTokens.formatColor(for: format)
                     )
-                    .tag(format.rawValue)
+                    .tag(SidebarSelection.format(format.rawValue))
                 }
             }
         }
@@ -275,6 +346,7 @@ struct ContentView: View {
         let icon: String
         let isSelected: Bool
         var iconColor: Color?
+        var badge: String?
 
         @State private var isHovered = false
 
@@ -289,6 +361,16 @@ struct ContentView: View {
                     .fontWeight(isSelected ? .semibold : .regular)
                     .lineLimit(1)
                     .foregroundColor(isSelected ? DesignTokens.accent : .primary)
+
+                if let badge {
+                    Text(badge)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(DesignTokens.accent, in: Capsule())
+                }
+
                 Spacer()
             }
             .padding(.vertical, DesignTokens.Sidebar.rowPaddingV)
@@ -344,7 +426,10 @@ struct ContentView: View {
                     .padding(.vertical, DesignTokens.Spacing.lg)
             }
 
-            if sortedBooks.isEmpty && !scanner.isScanning && !library.isImporting {
+            if sidebarSelection == .needsReview {
+                NeedsReviewTray()
+                    .environmentObject(library)
+            } else if sortedBooks.isEmpty && !scanner.isScanning && !library.isImporting {
                 emptyState
             } else {
                 ScrollView {
@@ -568,6 +653,10 @@ struct BookCoverTile: View {
             isHovered = hovering
         }
         .contentShape(Rectangle())
+        .gesture(
+            TapGesture(count: 2)
+                .onEnded { showReader = true }
+        )
         .contextMenu {
             Button {
                 showReader = true
@@ -594,6 +683,14 @@ struct BookCoverTile: View {
                 NSPasteboard.general.setString(book.sourcePath, forType: .string)
             } label: {
                 Label("Copy Path", systemImage: "doc.on.doc")
+            }
+
+            Divider()
+
+            Button(role: .destructive) {
+                library.removeAndExclude(book)
+            } label: {
+                Label("Remove & Never Re-add", systemImage: "xmark.bin")
             }
         }
         .sheet(isPresented: $showReader) {
@@ -787,4 +884,192 @@ struct MattedCoverView: View {
     ContentView()
         .environmentObject(ScannerService())
         .environmentObject(LibraryStore())
+}
+
+// MARK: - NeedsReviewTray
+
+/// Lists PDFs that scored in the "needs review" range (0.3...0.7).
+/// Each item shows a thumbnail and two actions: Add to Library / Not a Book.
+struct NeedsReviewTray: View {
+    @EnvironmentObject private var library: LibraryStore
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if library.needsReview.isEmpty {
+                emptyState
+            } else {
+                header
+                list
+            }
+        }
+        .background(DesignTokens.background.ignoresSafeArea())
+    }
+
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                Text("Needs Review")
+                    .font(DesignTokens.serifFont(
+                        size: DesignTokens.SectionHeader.fontSize,
+                        weight: .bold
+                    ))
+                    .tracking(DesignTokens.SectionHeader.tracking)
+                    .foregroundStyle(.primary)
+
+                Text("\(library.needsReview.count) file\(library.needsReview.count == 1 ? "" : "s") the classifier wasn't sure about")
+                    .font(DesignTokens.sansFont(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, DesignTokens.Spacing.xl)
+        .padding(.top, DesignTokens.Spacing.lg)
+        .padding(.bottom, DesignTokens.Spacing.sm)
+    }
+
+    private var list: some View {
+        ScrollView {
+            LazyVStack(spacing: DesignTokens.Spacing.sm) {
+                ForEach(library.needsReview) { classification in
+                    ReviewRow(classification: classification)
+                }
+            }
+            .padding(.horizontal, DesignTokens.Spacing.xl)
+            .padding(.bottom, DesignTokens.Spacing.xxl)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: DesignTokens.Spacing.md) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 48))
+                .foregroundStyle(.tertiary)
+
+            Text("All clear")
+                .font(DesignTokens.serifFont(size: 18, weight: .semibold))
+
+            Text("No files need review right now.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - ReviewRow
+
+/// A single row in the Needs Review tray: thumbnail + title + score + two actions.
+private struct ReviewRow: View {
+    let classification: BookClassification
+    @EnvironmentObject private var library: LibraryStore
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var thumbnail: NSImage?
+
+    private var fileName: String {
+        classification.fileName.isEmpty
+            ? classification.sourceURL.lastPathComponent
+            : classification.fileName
+    }
+
+    private var folderName: String {
+        classification.sourceURL.deletingLastPathComponent().lastPathComponent
+    }
+
+    var body: some View {
+        HStack(spacing: DesignTokens.Spacing.md) {
+            // Thumbnail — try to render from PDF if available
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(DesignTokens.paper)
+                    .frame(width: 48, height: 64)
+
+                if let thumbnail {
+                    Image(nsImage: thumbnail)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 48, height: 64)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                } else {
+                    Image(systemName: "doc.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                Text(fileName)
+                    .font(DesignTokens.sansFont(size: 13, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+
+                Text(folderName)
+                    .font(DesignTokens.sansFont(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+
+                HStack(spacing: DesignTokens.Spacing.xs) {
+                    Text("Score: \(Int(classification.score * 100))%")
+                        .font(DesignTokens.sansFont(size: 11))
+                        .foregroundStyle(.secondary)
+
+                    Text("\(classification.decidedAt.formatted(date: .abbreviated, time: .omitted))")
+                        .font(DesignTokens.sansFont(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Spacer()
+
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                Button {
+                    library.dismissClassification(classification)
+                } label: {
+                    Text("Not a Book")
+                        .font(DesignTokens.sansFont(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(.separator, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    Task { await library.confirmClassification(classification) }
+                } label: {
+                    Text("Add to Library")
+                        .font(DesignTokens.sansFont(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(DesignTokens.accent, in: RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(DesignTokens.Spacing.md)
+        .background(DesignTokens.surface, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(DesignTokens.hairline(colorScheme: colorScheme), lineWidth: 1)
+        )
+        .onAppear {
+            loadThumbnail()
+        }
+    }
+
+    private func loadThumbnail() {
+        guard classification.sourceURL.pathExtension.lowercased() == "pdf" else { return }
+        CoverThumbnailCache.shared.loadThumbnail(for: classification.sourceURL) { image in
+            withAnimation(.easeIn(duration: 0.25)) {
+                thumbnail = image
+            }
+        }
+    }
 }

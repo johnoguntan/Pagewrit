@@ -45,7 +45,7 @@ final class LibraryStore: ObservableObject {
         let coversFolder = folder.appendingPathComponent("Covers", isDirectory: true)
         try? FileManager.default.createDirectory(at: coversFolder, withIntermediateDirectories: true)
 
-        let schema = Schema([Book.self])
+        let schema = Schema([Book.self, BookClassification.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         do {
             self.modelContainer = try ModelContainer(for: schema, configurations: [config])
@@ -55,9 +55,110 @@ final class LibraryStore: ObservableObject {
         }
 
         loadBooks()
+        loadClassifications()
+    }
+
+    // MARK: - Classifications
+
+    @Published private(set) var classifications: [BookClassification] = []
+
+    /// Files the user has dismissed ("not a book") — checked during import
+    /// to prevent re-importing after rescan.
+    var dismissedHashes: Set<String> {
+        Set(classifications.filter { $0.decision == .userDismissed }.map { $0.fileHash })
+    }
+
+    /// Files sitting in the "Needs Review" tray.
+    var needsReview: [BookClassification] {
+        classifications.filter { $0.decision == .needsReview }
+    }
+
+    /// Look up an existing classification by content hash.
+    func classification(for hash: String) -> BookClassification? {
+        classifications.first { $0.fileHash == hash }
+    }
+
+    /// Record a classification decision (auto-added, needs review, auto-skipped).
+    func addClassification(_ classification: BookClassification) {
+        // Upsert: replace if already exists for this hash
+        if let idx = classifications.firstIndex(where: { $0.fileHash == classification.fileHash }) {
+            classifications[idx] = classification
+        } else {
+            modelContext.insert(classification)
+            classifications.append(classification)
+        }
+        try? modelContext.save()
+    }
+
+    /// Move a classification to user-confirmed (add to library from review
+    /// tray). Runs the file through the same ImportPipeline extraction
+    /// auto-added books get (real PDF title/author, not just the filename) —
+    /// a confirmed book is already in the library afterward, so rescans skip
+    /// it forever and would never get a chance to backfill real metadata later.
+    @MainActor
+    func confirmClassification(_ classification: BookClassification) async {
+        classification.decision = .userConfirmed
+        classification.decidedAt = Date()
+        try? modelContext.save()
+
+        let hash = classification.fileHash
+        guard !contains(hash: hash) else { return }
+
+        let url = classification.sourceURL
+        guard let format = BookFormat(fileExtension: url.pathExtension) else { return }
+
+        let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let file = DiscoveredFile(
+            url: url,
+            format: format,
+            sizeBytes: Int64(values?.fileSize ?? 0),
+            modifiedAt: values?.contentModificationDate
+        )
+
+        if let book = await ImportPipeline.importFile(file, libraryFolder: libraryFolder, precomputedHash: hash) {
+            add(book)
+        }
+    }
+
+    /// Dismiss a classification ("not a book"). Never resurfaces on rescan.
+    func dismissClassification(_ classification: BookClassification) {
+        classification.decision = .userDismissed
+        classification.decidedAt = Date()
+        try? modelContext.save()
+    }
+
+    /// Remove an already-imported book and permanently exclude it from future imports.
+    func removeAndExclude(_ book: Book) {
+        // Create a dismissed classification so it never comes back
+        let hash = book.contentHash
+        if let existing = classification(for: hash) {
+            existing.decision = .userDismissed
+            existing.decidedAt = Date()
+        } else {
+            let classification = BookClassification(
+                fileHash: hash,
+                score: 1.0,
+                decision: .userDismissed
+            )
+            modelContext.insert(classification)
+            classifications.append(classification)
+        }
+        remove(book)
+        try? modelContext.save()
     }
 
     // MARK: - Data access
+
+    /// Fetch all classifications from the persistent store.
+    private func loadClassifications() {
+        let descriptor = FetchDescriptor<BookClassification>(sortBy: [SortDescriptor(\.decidedAt, order: .reverse)])
+        do {
+            classifications = try modelContext.fetch(descriptor)
+        } catch {
+            print("LibraryStore: failed to fetch classifications: \(error)")
+            classifications = []
+        }
+    }
 
     /// Fetch all books from the persistent store, sorted by addedAt descending.
     private func loadBooks() {
@@ -105,6 +206,7 @@ final class LibraryStore: ObservableObject {
     /// Refresh the books array from the persistent store.
     func refresh() {
         loadBooks()
+        loadClassifications()
     }
 
     // MARK: - Book lookup
