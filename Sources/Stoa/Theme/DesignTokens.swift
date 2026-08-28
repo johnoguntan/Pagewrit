@@ -20,12 +20,13 @@ enum DesignTokens {
 
     // MARK: - Colors
 
-    /// Terracotta — warm kiln-fired clay, adapting for light/dark. Chosen
-    /// over the earlier indigo-violet because it reads as a physical,
-    /// material color (stone, pottery) rather than another "productivity
-    /// app blue" — fitting for a library named after a covered stone walkway.
-    static let accent = Color(light: NSColor(red: 0.710, green: 0.314, blue: 0.180, alpha: 1),
-                             dark: NSColor(red: 0.878, green: 0.541, blue: 0.361, alpha: 1))
+    /// Verdigris — aged bronze-patina green, adapting for light/dark.
+    /// Landed here after two rounds: indigo-violet read as generic
+    /// "productivity app blue", and a terracotta/colonnade-illustration
+    /// combo was rejected outright (illustration style, subject, and color
+    /// all missed). This is flat and quiet rather than rendered/illustrated.
+    static let accent = Color(light: NSColor(red: 0.247, green: 0.490, blue: 0.420, alpha: 1),
+                             dark: NSColor(red: 0.435, green: 0.749, blue: 0.651, alpha: 1))
 
     /// A warmer secondary accent (muted amber) reserved for small moments
     /// that shouldn't compete with the primary accent — currently unused,
