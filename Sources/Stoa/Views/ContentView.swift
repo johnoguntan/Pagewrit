@@ -109,13 +109,20 @@ struct ContentView: View {
         NavigationSplitView {
             sidebar
         } detail: {
-            detailContent
+            // navigationDestination(for:) must live inside the detail
+            // column's own navigation stack, not chained onto the
+            // NavigationSplitView itself — attached there, SwiftUI logs
+            // "misplaced navigationDestination... it will be ignored" and
+            // NavigationLink(value:) taps silently do nothing.
+            NavigationStack {
+                detailContent
+                    .navigationDestination(for: Book.self) { book in
+                        BookDetailView(book: book)
+                            .environmentObject(library)
+                    }
+            }
         }
         .navigationTitle("Library")
-        .navigationDestination(for: Book.self) { book in
-            BookDetailView(book: book)
-                .environmentObject(library)
-        }
         .searchable(text: $searchText, prompt: "Search books")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {

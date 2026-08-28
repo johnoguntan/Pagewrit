@@ -1,6 +1,21 @@
 import Foundation
 import SwiftData
 
+/// What happened to a file after scoring. Declared at the top level (not
+/// nested inside `BookClassification`) — a nested enum inside an `@Model`
+/// class body appears to confuse the macro's synthesized `Equatable`
+/// conformance (this exact nesting produced "Type 'BookClassification'
+/// does not conform to protocol 'Equatable'" from Xcode; `Book`'s analogous
+/// `BookFormat` enum has always been top-level, and that model has never
+/// hit this).
+enum BookClassificationDecision: String, CaseIterable {
+    case autoAdded       // score ≥ 0.7 → went straight to library
+    case needsReview     // 0.3–0.7 → sitting in the review tray
+    case autoSkipped     // < 0.3 → silently not imported
+    case userConfirmed   // user explicitly added from review tray
+    case userDismissed   // user said "not a book" — never resurfaces
+}
+
 /// A persisted classification decision for a single file, keyed by its
 /// content hash. Lives in the same SwiftData store as `Book` records.
 ///
@@ -28,15 +43,7 @@ final class BookClassification: Hashable {
     /// Display name derived from the filename (set at classification time).
     var fileName: String
 
-    // MARK: - Decision enum
-
-    enum Decision: String, CaseIterable {
-        case autoAdded       // score ≥ 0.7 → went straight to library
-        case needsReview     // 0.3–0.7 → sitting in the review tray
-        case autoSkipped     // < 0.3 → silently not imported
-        case userConfirmed   // user explicitly added from review tray
-        case userDismissed   // user said "not a book" — never resurfaces
-    }
+    typealias Decision = BookClassificationDecision
 
     var decision: Decision {
         get { Decision(rawValue: decisionRaw) ?? .autoSkipped }
