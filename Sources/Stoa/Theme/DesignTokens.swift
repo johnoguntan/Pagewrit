@@ -20,11 +20,12 @@ enum DesignTokens {
 
     // MARK: - Colors
 
-    /// Deep royal indigo-violet, adapting for light/dark — richer and more
-    /// saturated than the original periwinkle accent, reads as a deliberate
-    /// jewel tone rather than a default "blue".
-    static let accent = Color(light: NSColor(red: 0.278, green: 0.278, blue: 0.784, alpha: 1),
-                             dark: NSColor(red: 0.541, green: 0.541, blue: 0.996, alpha: 1))
+    /// Terracotta — warm kiln-fired clay, adapting for light/dark. Chosen
+    /// over the earlier indigo-violet because it reads as a physical,
+    /// material color (stone, pottery) rather than another "productivity
+    /// app blue" — fitting for a library named after a covered stone walkway.
+    static let accent = Color(light: NSColor(red: 0.710, green: 0.314, blue: 0.180, alpha: 1),
+                             dark: NSColor(red: 0.878, green: 0.541, blue: 0.361, alpha: 1))
 
     /// A warmer secondary accent (muted amber) reserved for small moments
     /// that shouldn't compete with the primary accent — currently unused,
@@ -303,8 +304,8 @@ extension DesignTokens {
         switch format {
         case .epub: Color(light: NSColor(red: 0.204, green: 0.478, blue: 0.663, alpha: 1),
                           dark: NSColor(red: 0.443, green: 0.694, blue: 0.855, alpha: 1))
-        case .pdf: Color(light: NSColor(red: 0.749, green: 0.404, blue: 0.239, alpha: 1),
-                         dark: NSColor(red: 0.914, green: 0.596, blue: 0.408, alpha: 1))
+        case .pdf: Color(light: NSColor(red: 0.660, green: 0.510, blue: 0.157, alpha: 1),
+                         dark: NSColor(red: 0.851, green: 0.663, blue: 0.290, alpha: 1))
         case .cbz: Color(light: NSColor(red: 0.545, green: 0.353, blue: 0.667, alpha: 1),
                          dark: NSColor(red: 0.769, green: 0.596, blue: 0.878, alpha: 1))
         }
