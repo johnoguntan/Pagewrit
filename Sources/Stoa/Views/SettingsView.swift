@@ -11,9 +11,16 @@ import AppKit
 struct SettingsView: View {
     @EnvironmentObject private var scanner: ScannerService
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        ScrollView {
+        VStack(spacing: 0) {
+            header
+
+            Divider()
+                .overlay(DesignTokens.hairline(colorScheme: colorScheme))
+
+            ScrollView {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.xl) {
                 section(title: "Always scanned", icon: "checkmark.circle.fill", tint: DesignTokens.accent) {
                     VStack(spacing: 2) {
@@ -59,9 +66,34 @@ struct SettingsView: View {
                 }
             }
             .padding(DesignTokens.Spacing.xl)
+            }
         }
         .frame(width: 520, height: 460)
         .background(DesignTokens.background.ignoresSafeArea())
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        HStack {
+            Text("Settings")
+                .font(DesignTokens.serifFont(size: 17, weight: .semibold))
+                .foregroundStyle(.primary)
+
+            Spacer()
+
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+        }
+        .padding(.horizontal, DesignTokens.Spacing.xl)
+        .padding(.vertical, DesignTokens.Spacing.md)
     }
 
     // MARK: - Section

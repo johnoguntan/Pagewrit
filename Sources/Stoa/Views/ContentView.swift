@@ -202,6 +202,11 @@ struct ContentView: View {
                 await rescanAndImport()
             }
         }
+        .sheet(isPresented: $library.showSettings) {
+            SettingsView()
+                .environmentObject(scanner)
+                .environmentObject(library)
+        }
     }
 
     // MARK: - Scan + Import pipeline
@@ -418,6 +423,17 @@ struct ContentView: View {
                 .foregroundStyle(.primary)
 
             Spacer()
+
+            Button {
+                library.showSettings = true
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+            }
+            .buttonStyle(.plain)
+            .help("Settings")
         }
     }
 

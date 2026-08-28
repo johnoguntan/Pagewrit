@@ -17,12 +17,15 @@ struct StoaApp: App {
         .defaultSize(width: 1100, height: 720)
         .commands {
             CommandGroup(replacing: .newItem) { }
-        }
-
-        Settings {
-            SettingsView()
-                .environmentObject(scanner)
-                .environmentObject(library)
+            // Settings lives inside the main window (sidebar gear button, or
+            // Cmd+,) rather than as a separate macOS Settings window — the
+            // native Settings scene is intentionally not used here.
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") {
+                    library.showSettings = true
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
         }
     }
 }

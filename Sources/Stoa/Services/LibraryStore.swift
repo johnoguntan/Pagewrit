@@ -23,6 +23,11 @@ final class LibraryStore: ObservableObject {
     /// Fraction of discovered files imported so far (0.0 ... 1.0).
     @Published var importProgress: Double = 0
 
+    /// Drives the in-window Settings sheet — Settings lives inside the main
+    /// window (sidebar gear button, or Cmd+,) rather than as a separate
+    /// macOS Settings window.
+    @Published var showSettings: Bool = false
+
     // MARK: - SwiftData
 
     let modelContainer: ModelContainer
