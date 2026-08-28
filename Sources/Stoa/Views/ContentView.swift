@@ -1,6 +1,58 @@
 import SwiftUI
 import Foundation
 
+// MARK: - GridDensity
+
+/// How much of the library grid a viewer sees at once. Persisted across
+/// launches via @AppStorage so a chosen density sticks.
+enum GridDensity: String, CaseIterable, Identifiable {
+    case compact
+    case comfortable
+    case large
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .compact: "Compact"
+        case .comfortable: "Comfortable"
+        case .large: "Large"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .compact: "square.grid.4x3.fill"
+        case .comfortable: "square.grid.3x2.fill"
+        case .large: "square.grid.2x2.fill"
+        }
+    }
+
+    /// Minimum tile width fed into the adaptive grid column. Compact is
+    /// ~64% of comfortable's width, per the "60-65%" target.
+    var columnMinimum: CGFloat {
+        switch self {
+        case .compact: 96
+        case .comfortable: DesignTokens.Grid.columnMinimum
+        case .large: 210
+        }
+    }
+
+    var gridSpacing: CGFloat {
+        switch self {
+        case .compact: 16
+        case .comfortable: DesignTokens.Grid.spacing
+        case .large: 28
+        }
+    }
+
+    /// One line at Compact (there isn't room for two without the grid
+    /// feeling cramped); two lines everywhere else, unchanged from before.
+    var titleLineLimit: Int {
+        self == .compact ? 1 : 2
+    }
+}
+
 // MARK: - ContentView
 
 /// Library grid view with warm, luxurious palette and serif-accented typography.
@@ -13,6 +65,11 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var sortOrder: SortOption = .recentlyAdded
     @State private var importTaskID: UUID?
+    @AppStorage("stoa.gridDensity") private var gridDensityRaw: String = GridDensity.comfortable.rawValue
+
+    private var gridDensity: GridDensity {
+        GridDensity(rawValue: gridDensityRaw) ?? .comfortable
+    }
 
     enum SortOption: String, CaseIterable, Identifiable {
         case title
@@ -96,12 +153,14 @@ struct ContentView: View {
 
     // MARK: - Grid layout
 
-    private let columns = [
-        GridItem(
-            .adaptive(minimum: DesignTokens.Grid.columnMinimum),
-            spacing: DesignTokens.Grid.spacing
-        )
-    ]
+    private var columns: [GridItem] {
+        [
+            GridItem(
+                .adaptive(minimum: gridDensity.columnMinimum),
+                spacing: gridDensity.gridSpacing
+            )
+        ]
+    }
 
     // MARK: - Body
 
@@ -126,6 +185,7 @@ struct ContentView: View {
         .searchable(text: $searchText, prompt: "Search books")
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
+                densityMenu
                 sortMenu
                 Button {
                     Task { await rescanAndImport() }
@@ -232,6 +292,28 @@ struct ContentView: View {
             }
         } label: {
             Label(sortOrder.displayName, systemImage: sortOrder.systemImage)
+        }
+    }
+
+    // MARK: - Density Menu
+
+    private var densityMenu: some View {
+        Menu {
+            ForEach(GridDensity.allCases) { density in
+                Button {
+                    gridDensityRaw = density.rawValue
+                } label: {
+                    Label(density.displayName, systemImage: density.systemImage)
+                        .overlay(alignment: .trailing) {
+                            if gridDensity == density {
+                                Image(systemName: "checkmark")
+                                    .padding(.trailing, -20)
+                            }
+                        }
+                }
+            }
+        } label: {
+            Label(gridDensity.displayName, systemImage: gridDensity.systemImage)
         }
     }
 
@@ -446,12 +528,12 @@ struct ContentView: View {
                             .padding(.top, DesignTokens.Spacing.lg)
                     }
 
-                    LazyVGrid(columns: columns, spacing: DesignTokens.Grid.spacing) {
+                    LazyVGrid(columns: columns, spacing: gridDensity.gridSpacing) {
                         ForEach(booksByFormat, id: \.title) { section in
                             Section {
                                 ForEach(section.books) { book in
                                     NavigationLink(value: book) {
-                                        BookCoverTile(book: book)
+                                        BookCoverTile(book: book, density: gridDensity)
                                     }
                                     .buttonStyle(.plain)
                                 }
@@ -614,6 +696,7 @@ struct HeroBand: View {
 /// Single cover-art tile in the library grid.
 struct BookCoverTile: View {
     let book: Book
+    var density: GridDensity = .comfortable
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
@@ -641,7 +724,8 @@ struct BookCoverTile: View {
                     weight: .semibold
                 ))
                 .foregroundStyle(.primary)
-                .lineLimit(2)
+                .lineLimit(density.titleLineLimit)
+                .help(book.title)
 
             Text(book.format.rawValue.uppercased())
                 .font(DesignTokens.sansFont(size: DesignTokens.Grid.Author.fontSize))
