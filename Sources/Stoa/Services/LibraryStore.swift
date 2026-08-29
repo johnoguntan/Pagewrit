@@ -61,6 +61,7 @@ final class LibraryStore: ObservableObject {
 
         loadBooks()
         loadClassifications()
+        buildSearchIndexIfNeeded()
     }
 
     // MARK: - Classifications
@@ -187,6 +188,7 @@ final class LibraryStore: ObservableObject {
         modelContext.insert(book)
         try? modelContext.save()
         books.insert(book, at: 0) // newest first
+        buildSearchIndexIfNeeded()
     }
 
     /// Remove a book from the library and persist.
@@ -234,6 +236,89 @@ final class LibraryStore: ObservableObject {
     func refresh() {
         loadBooks()
         loadClassifications()
+        buildSearchIndexIfNeeded()
+    }
+
+    // MARK: - Full-text search
+
+    /// Books currently matching an in-progress content search — populated
+    /// asynchronously by `searchContent`. Empty means "no content search is
+    /// active", not "no matches" (ContentView only consults this when the
+    /// search text is long enough to trigger one).
+    @Published private(set) var contentSearchMatchHashes: Set<String> = []
+
+    private var contentSearchTask: Task<Void, Never>?
+    private var indexingTask: Task<Void, Never>?
+
+    /// Extracts and caches plain text for any book that doesn't have it yet
+    /// (new imports, or books from before this feature existed), so search
+    /// has something to search against. Runs off the main actor in the
+    /// background; safe to call repeatedly — it only touches books that are
+    /// still missing an index.
+    func buildSearchIndexIfNeeded() {
+        let candidates = books.compactMap { book -> (hash: String, url: URL, format: BookFormat)? in
+            guard book.extractedTextPath == nil, book.format != .cbz else { return nil }
+            return (book.contentHash, book.sourceURL, book.format)
+        }
+        guard !candidates.isEmpty else { return }
+
+        let indexFolder = libraryFolder.appendingPathComponent("SearchIndex", isDirectory: true)
+        try? FileManager.default.createDirectory(at: indexFolder, withIntermediateDirectories: true)
+
+        indexingTask?.cancel()
+        indexingTask = Task.detached(priority: .utility) {
+            var results: [(hash: String, path: String)] = []
+            for candidate in candidates {
+                if Task.isCancelled { return }
+                guard let text = TextExtractor.extractText(url: candidate.url, format: candidate.format) else { continue }
+                let fileURL = indexFolder.appendingPathComponent("\(candidate.hash).txt")
+                guard (try? text.write(to: fileURL, atomically: true, encoding: .utf8)) != nil else { continue }
+                results.append((candidate.hash, fileURL.path))
+            }
+            guard !results.isEmpty else { return }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                for result in results {
+                    if let book = self.books.first(where: { $0.contentHash == result.hash }) {
+                        book.extractedTextPath = result.path
+                    }
+                }
+                try? self.modelContext.save()
+            }
+        }
+    }
+
+    /// Searches cached extracted text for `query`, populating
+    /// `contentSearchMatchHashes` asynchronously. Cheap no-op for short
+    /// queries (avoids scanning the whole index on every keystroke of a
+    /// one- or two-letter search).
+    func searchContent(_ query: String) {
+        contentSearchTask?.cancel()
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 3 else {
+            contentSearchMatchHashes = []
+            return
+        }
+
+        let candidates = books.compactMap { book -> (hash: String, url: URL)? in
+            guard let url = book.extractedTextURL else { return nil }
+            return (book.contentHash, url)
+        }
+
+        contentSearchTask = Task.detached(priority: .userInitiated) {
+            var matches: Set<String> = []
+            for candidate in candidates {
+                if Task.isCancelled { return }
+                guard let text = try? String(contentsOf: candidate.url, encoding: .utf8) else { continue }
+                if text.range(of: trimmed, options: [.caseInsensitive, .diacriticInsensitive]) != nil {
+                    matches.insert(candidate.hash)
+                }
+            }
+            if Task.isCancelled { return }
+            await MainActor.run { [weak self] in
+                self?.contentSearchMatchHashes = matches
+            }
+        }
     }
 
     // MARK: - Book lookup

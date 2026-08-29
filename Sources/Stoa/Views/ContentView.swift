@@ -123,6 +123,7 @@ struct ContentView: View {
             $0.title.localizedCaseInsensitiveContains(searchText)
                 || ($0.author?.localizedCaseInsensitiveContains(searchText) ?? false)
                 || $0.tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
+                || library.contentSearchMatchHashes.contains($0.contentHash)
         }
     }
 
@@ -196,7 +197,10 @@ struct ContentView: View {
             }
         }
         .navigationTitle("Library")
-        .searchable(text: $searchText, prompt: "Search books")
+        .searchable(text: $searchText, prompt: "Search books \u{2014} titles, tags, and book contents")
+        .onChange(of: searchText) { _, newValue in
+            library.searchContent(newValue)
+        }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 densityMenu
