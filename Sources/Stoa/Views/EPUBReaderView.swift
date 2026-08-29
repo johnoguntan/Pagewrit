@@ -22,6 +22,10 @@ struct EPUBReaderView: View {
     @State private var currentChapterIndex: Int = 0
     @State private var isLoading = true
     @State private var loadFailed = false
+    @AppStorage("stoa.epubFontScale") private var fontScale: Double = 1.0
+
+    private let fontScaleRange: ClosedRange<Double> = 0.75...2.0
+    private let fontScaleStep: Double = 0.125
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,7 +36,8 @@ struct EPUBReaderView: View {
             } else if !chapterURLs.isEmpty {
                 EPUBWebViewRepresented(
                     chapterURL: chapterURLs[currentChapterIndex],
-                    contentDirectory: epub?.contentDirectory
+                    contentDirectory: epub?.contentDirectory,
+                    fontScale: fontScale
                 )
             } else {
                 ProgressView()
@@ -68,6 +73,8 @@ struct EPUBReaderView: View {
                     .foregroundStyle(.secondary)
             }
 
+            fontSizeControls
+
             Button {
                 dismiss()
             } label: {
@@ -85,6 +92,35 @@ struct EPUBReaderView: View {
                 .fill(DesignTokens.hairline(colorScheme: colorScheme))
                 .frame(height: 1)
         }
+    }
+
+    // MARK: - Font Size Controls
+
+    private var fontSizeControls: some View {
+        HStack(spacing: 2) {
+            Button {
+                fontScale = max(fontScaleRange.lowerBound, fontScale - fontScaleStep)
+            } label: {
+                Image(systemName: "textformat.size.smaller")
+                    .font(.system(size: 12))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(fontScale <= fontScaleRange.lowerBound)
+            .help("Smaller text")
+
+            Button {
+                fontScale = min(fontScaleRange.upperBound, fontScale + fontScaleStep)
+            } label: {
+                Image(systemName: "textformat.size.larger")
+                    .font(.system(size: 12))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(fontScale >= fontScaleRange.upperBound)
+            .help("Larger text")
+        }
+        .padding(.trailing, DesignTokens.Spacing.xs)
     }
 
     // MARK: - Footer
@@ -234,16 +270,23 @@ struct EPUBReaderView: View {
 private struct EPUBWebViewRepresented: NSViewRepresentable {
     let chapterURL: URL
     let contentDirectory: URL?
+    var fontScale: Double = 1.0
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         let webView = WKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = context.coordinator
         return webView
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
-        // Only reload when the chapter URL actually changes
-        guard context.coordinator.lastLoadedURL != chapterURL else { return }
+        context.coordinator.fontScale = fontScale
+
+        guard context.coordinator.lastLoadedURL != chapterURL else {
+            // Same chapter — just re-apply the font size if it changed.
+            context.coordinator.applyFontScale(to: webView)
+            return
+        }
         context.coordinator.lastLoadedURL = chapterURL
         let readAccessTo = contentDirectory ?? chapterURL.deletingLastPathComponent()
         webView.loadFileURL(chapterURL, allowingReadAccessTo: readAccessTo)
@@ -251,7 +294,23 @@ private struct EPUBWebViewRepresented: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    final class Coordinator: NSObject {
+    /// Applies the user's chosen font scale by injecting a <style> override
+    /// after each page load, and re-injecting (without reloading) whenever
+    /// the scale changes on the same chapter — a full page reload would
+    /// lose scroll position for no reason.
+    final class Coordinator: NSObject, WKNavigationDelegate {
         var lastLoadedURL: URL?
+        var fontScale: Double = 1.0
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            applyFontScale(to: webView)
+        }
+
+        func applyFontScale(to webView: WKWebView) {
+            let pixelSize = Int((17.0 * fontScale).rounded())
+            let css = "html, body, p, div, span, li, td { font-size: \(pixelSize)px !important; line-height: 1.6 !important; }"
+            let js = "(function(){var s=document.getElementById('stoa-font-override');if(!s){s=document.createElement('style');s.id='stoa-font-override';document.head.appendChild(s);}s.textContent=\(css.debugDescription);})();"
+            webView.evaluateJavaScript(js, completionHandler: nil)
+        }
     }
 }
