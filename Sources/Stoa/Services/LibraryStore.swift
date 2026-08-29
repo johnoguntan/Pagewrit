@@ -62,6 +62,7 @@ final class LibraryStore: ObservableObject {
         loadBooks()
         loadClassifications()
         buildSearchIndexIfNeeded()
+        SpotlightIndexer.reindex(books)
     }
 
     // MARK: - Classifications
@@ -189,10 +190,12 @@ final class LibraryStore: ObservableObject {
         try? modelContext.save()
         books.insert(book, at: 0) // newest first
         buildSearchIndexIfNeeded()
+        SpotlightIndexer.reindex([book])
     }
 
     /// Remove a book from the library and persist.
     func remove(_ book: Book) {
+        SpotlightIndexer.remove(hash: book.contentHash)
         modelContext.delete(book)
         try? modelContext.save()
         books.removeAll { $0.id == book.id }
@@ -237,6 +240,7 @@ final class LibraryStore: ObservableObject {
         loadBooks()
         loadClassifications()
         buildSearchIndexIfNeeded()
+        SpotlightIndexer.reindex(books)
     }
 
     // MARK: - Full-text search

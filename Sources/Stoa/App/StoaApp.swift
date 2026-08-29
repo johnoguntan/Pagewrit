@@ -1,9 +1,36 @@
 import SwiftUI
+import CoreSpotlight
+
+extension Notification.Name {
+    /// Posted when the user taps a Stoa result in macOS Spotlight — carries
+    /// the tapped book's contentHash as the notification's object.
+    static let stoaOpenBookFromSpotlight = Notification.Name("stoaOpenBookFromSpotlight")
+}
+
+/// Routes a Spotlight tap back into the running app. NSApplicationDelegate
+/// is still the only way to receive continue-userActivity on macOS
+/// SwiftUI-lifecycle apps.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func application(
+        _ application: NSApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([NSUserActivityRestoring]) -> Void
+    ) -> Bool {
+        guard userActivity.activityType == CSSearchableItemActionType,
+              let hash = userActivity.userInfo?[CSSearchableItemActivityIdentifier] as? String
+        else {
+            return false
+        }
+        NotificationCenter.default.post(name: .stoaOpenBookFromSpotlight, object: hash)
+        return true
+    }
+}
 
 @main
 struct StoaApp: App {
     @StateObject private var scanner = ScannerService()
     @StateObject private var library = LibraryStore()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         WindowGroup {

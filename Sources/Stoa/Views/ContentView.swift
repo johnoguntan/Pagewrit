@@ -66,6 +66,7 @@ struct ContentView: View {
     @State private var sortOrder: SortOption = .recentlyAdded
     @State private var importTaskID: UUID?
     @AppStorage("stoa.gridDensity") private var gridDensityRaw: String = GridDensity.comfortable.rawValue
+    @State private var spotlightBook: Book?
 
     private var gridDensity: GridDensity {
         GridDensity(rawValue: gridDensityRaw) ?? .comfortable
@@ -200,6 +201,16 @@ struct ContentView: View {
         .searchable(text: $searchText, prompt: "Search books \u{2014} titles, tags, and book contents")
         .onChange(of: searchText) { _, newValue in
             library.searchContent(newValue)
+        }
+        .sheet(item: $spotlightBook) { book in
+            BookReaderSheet(book: book)
+                .environmentObject(library)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .stoaOpenBookFromSpotlight)) { note in
+            guard let hash = note.object as? String,
+                  let book = library.books.first(where: { $0.contentHash == hash })
+            else { return }
+            spotlightBook = book
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
