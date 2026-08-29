@@ -45,6 +45,7 @@ struct EPUBReaderView: View {
         .frame(minWidth: 760, minHeight: 600)
         .background(DesignTokens.background.ignoresSafeArea())
         .onAppear(perform: load)
+        .onAppear { library.markOpened(book) }
         .focusable()
         .onKeyPress(.rightArrow) { advance(1); return .handled }
         .onKeyPress(.leftArrow) { advance(-1); return .handled }

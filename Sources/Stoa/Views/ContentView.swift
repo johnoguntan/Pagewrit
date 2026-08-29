@@ -151,6 +151,11 @@ struct ContentView: View {
         library.books.max { $0.addedAt > $1.addedAt }
     }
 
+    /// The book to resume, if anything is in progress.
+    private var continueReadingBook: Book? {
+        library.continueReading.first
+    }
+
     // MARK: - Grid layout
 
     private var columns: [GridItem] {
@@ -538,7 +543,11 @@ struct ContentView: View {
                 emptyState
             } else {
                 ScrollView {
-                    if searchText.isEmpty, let mostRecent = mostRecentBook {
+                    if searchText.isEmpty, let resuming = continueReadingBook {
+                        HeroBand(book: resuming, continueReading: true)
+                            .padding(.horizontal, DesignTokens.Spacing.xl)
+                            .padding(.top, DesignTokens.Spacing.lg)
+                    } else if searchText.isEmpty, let mostRecent = mostRecentBook {
                         HeroBand(book: mostRecent)
                             .padding(.horizontal, DesignTokens.Spacing.xl)
                             .padding(.top, DesignTokens.Spacing.lg)
@@ -614,19 +623,50 @@ struct ContentView: View {
     }
 }
 
+// MARK: - ProgressBar
+
+/// Small reusable capsule progress track, used by the Continue Reading hero.
+struct ProgressBar: View {
+    let fraction: Double
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.primary.opacity(0.12))
+
+                Capsule()
+                    .fill(DesignTokens.accent)
+                    .frame(width: geo.size.width * min(max(fraction, 0), 1))
+            }
+        }
+    }
+}
+
 // MARK: - HeroBand
 
-/// Full-width spotlight above the grid: the most recently added book, big.
-/// Structured as a HeroState enum so Phase 3 can swap in a "Continue Reading"
-/// variant (progress bar + Resume) without rewriting the view.
+/// Full-width spotlight above the grid: either the book you're actively
+/// reading (progress bar + Resume) or, if nothing's in progress, the most
+/// recently added book.
 struct HeroBand: View {
     let book: Book
+    /// When true, renders as "Continue Reading" (progress bar + Resume)
+    /// instead of the default "Recently added" spotlight.
+    var continueReading: Bool = false
+    @EnvironmentObject private var library: LibraryStore
     @Environment(\.colorScheme) private var colorScheme
+    @State private var showReader = false
 
     private var relativeAdded: String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: book.addedAt, relativeTo: Date())
+    }
+
+    private var relativeOpened: String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: book.lastOpenedAt ?? book.addedAt, relativeTo: Date())
     }
 
     var body: some View {
@@ -655,13 +695,13 @@ struct HeroBand: View {
                     )
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Recently added")
+                    Text(continueReading ? "Continue reading" : "Recently added")
                         .font(DesignTokens.sansFont(
                             size: DesignTokens.Hero.Eyebrow.fontSize,
                             weight: .semibold
                         ))
                         .tracking(DesignTokens.Hero.Eyebrow.tracking)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(continueReading ? DesignTokens.accent : .tertiary)
                         .textCase(.uppercase)
 
                     Text(book.title)
@@ -673,15 +713,26 @@ struct HeroBand: View {
                         .foregroundStyle(.primary)
                         .lineLimit(2)
 
-                    Text("\(book.format.rawValue.uppercased()) \u{00b7} \(relativeAdded)")
-                        .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
-                        .foregroundStyle(.secondary)
-                        .padding(.bottom, DesignTokens.Spacing.xs)
+                    if continueReading {
+                        Text("\(Int((book.readingProgress ?? 0) * 100))% \u{00b7} last opened \(relativeOpened)")
+                            .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
+                            .foregroundStyle(.secondary)
+
+                        ProgressBar(fraction: book.readingProgress ?? 0)
+                            .frame(width: 200, height: 4)
+                            .padding(.top, 2)
+                            .padding(.bottom, DesignTokens.Spacing.xs - 2)
+                    } else {
+                        Text("\(book.format.rawValue.uppercased()) \u{00b7} \(relativeAdded)")
+                            .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
+                            .foregroundStyle(.secondary)
+                            .padding(.bottom, DesignTokens.Spacing.xs)
+                    }
 
                     Button {
-                        NSWorkspace.shared.open(book.sourceURL)
+                        showReader = true
                     } label: {
-                        Text("Open")
+                        Text(continueReading ? "Resume" : "Open")
                             .font(DesignTokens.sansFont(
                                 size: DesignTokens.Hero.Button.fontSize,
                                 weight: .semibold
@@ -703,6 +754,10 @@ struct HeroBand: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(height: DesignTokens.Hero.height)
+        .sheet(isPresented: $showReader) {
+            BookReaderSheet(book: book)
+                .environmentObject(library)
+        }
         .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Hero.cornerRadius))
     }
 }

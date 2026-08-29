@@ -33,6 +33,7 @@ struct PDFReaderView: View {
         .frame(minWidth: 760, minHeight: 600)
         .background(DesignTokens.background.ignoresSafeArea())
         .onAppear(perform: load)
+        .onAppear { library.markOpened(book) }
         .onChange(of: currentPageIndex) { _, newValue in
             saveProgress(pageIndex: newValue)
         }

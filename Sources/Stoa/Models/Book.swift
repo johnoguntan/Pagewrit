@@ -19,6 +19,8 @@ final class Book: Hashable {
     var contentHash: String        // SHA256 of file bytes, for dedup
     var sizeBytes: Int64
     var modifiedAt: Date?
+    var lastOpenedAt: Date?         // when the reader was last opened — drives "Continue Reading"
+    var extractedTextPath: String?  // cached plain-text extraction on disk, for full-text search
 
     init(
         title: String,
@@ -32,7 +34,9 @@ final class Book: Hashable {
         readingProgress: Double? = nil,
         contentHash: String = "",
         sizeBytes: Int64 = 0,
-        modifiedAt: Date? = nil
+        modifiedAt: Date? = nil,
+        lastOpenedAt: Date? = nil,
+        extractedTextPath: String? = nil
     ) {
         self.title = title
         self.author = author
@@ -46,6 +50,8 @@ final class Book: Hashable {
         self.contentHash = contentHash
         self.sizeBytes = sizeBytes
         self.modifiedAt = modifiedAt
+        self.lastOpenedAt = lastOpenedAt
+        self.extractedTextPath = extractedTextPath
     }
 
     // MARK: - Hashable via persistentModelID
@@ -74,5 +80,14 @@ final class Book: Hashable {
 
     var coverImageURL: URL? {
         coverImagePath.map { URL(fileURLWithPath: $0) }
+    }
+
+    var extractedTextURL: URL? {
+        extractedTextPath.map { URL(fileURLWithPath: $0) }
+    }
+
+    /// True once reading progress is close enough to the end to count as done.
+    var isFinished: Bool {
+        (readingProgress ?? 0) >= 0.98
     }
 }

@@ -205,7 +205,29 @@ final class LibraryStore: ObservableObject {
     /// Update reading progress for a specific book.
     func updateProgress(for book: Book, progress: Double) {
         book.readingProgress = min(max(progress, 0), 1.0)
+        book.lastOpenedAt = Date()
         try? modelContext.save()
+    }
+
+    /// Stamp a book as opened without necessarily changing progress — called
+    /// when a reader is presented, so "Continue Reading" picks it up even
+    /// before the first page-change fires an updateProgress call.
+    func markOpened(_ book: Book) {
+        book.lastOpenedAt = Date()
+        try? modelContext.save()
+    }
+
+    /// Books with progress in (0, 0.98), most recently opened first — the
+    /// candidate list for the "Continue Reading" hero.
+    var continueReading: [Book] {
+        books
+            .filter { book in
+                guard let progress = book.readingProgress else { return false }
+                return progress > 0 && !book.isFinished
+            }
+            .sorted { (lhs, rhs) in
+                (lhs.lastOpenedAt ?? lhs.addedAt) > (rhs.lastOpenedAt ?? rhs.addedAt)
+            }
     }
 
     /// Refresh the books array from the persistent store.

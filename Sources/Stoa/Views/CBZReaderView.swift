@@ -36,6 +36,7 @@ struct CBZReaderView: View {
         .frame(minWidth: 760, minHeight: 620)
         .background(DesignTokens.background.ignoresSafeArea())
         .onAppear(perform: openArchive)
+        .onAppear { library.markOpened(book) }
         .onChange(of: currentPageIndex) { _, newValue in
             loadPage(at: newValue)
             saveProgress()
