@@ -133,9 +133,15 @@ enum DesignTokens {
         /// Title: 13pt serif .semibold, .primary, 2-line max
         enum Title {
             static let fontSize: CGFloat = 13
+            /// Reserves 2 lines' worth of height regardless of actual
+            /// line count, so every row in the grid stays flush — a
+            /// short 1-line title next to a wrapped 2-line title no
+            /// longer staggers the row beneath it. Same discipline as
+            /// the hero rail (DesignTokens.Hero.Title.blockHeight).
+            static let blockHeight: CGFloat = 34
         }
 
-        /// Author: 12pt, .secondary
+        /// Secondary line: author when known, format otherwise. 12pt, .secondary
         enum Author {
             static let fontSize: CGFloat = 12
         }

@@ -973,6 +973,13 @@ struct BookCoverTile: View {
     @State private var isHovered = false
     @State private var showReader = false
 
+    private var secondaryLine: String {
+        if let author = book.author, !author.isEmpty {
+            return author
+        }
+        return book.format.rawValue.uppercased()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
             MattedCoverView(book: book)
@@ -996,11 +1003,20 @@ struct BookCoverTile: View {
                 ))
                 .foregroundStyle(.primary)
                 .lineLimit(density.titleLineLimit)
+                .frame(
+                    height: density == .compact ? nil : DesignTokens.Grid.Title.blockHeight,
+                    alignment: .topLeading
+                )
                 .help(book.title)
 
-            Text(book.format.rawValue.uppercased())
+            // Author when the file's metadata actually has one — a
+            // one-line title card next to a two-line one otherwise stays
+            // aligned but says less than it could. Falls back to format
+            // when there's no author to show.
+            Text(secondaryLine)
                 .font(DesignTokens.sansFont(size: DesignTokens.Grid.Author.fontSize))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
         .offset(y: isHovered ? DesignTokens.Hover.gridLiftY : 0)
         .scaleEffect(isHovered ? DesignTokens.Hover.gridScale : 1.0)
