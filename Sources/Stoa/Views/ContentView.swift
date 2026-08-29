@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import UniformTypeIdentifiers
 
 // MARK: - GridDensity
 
@@ -217,6 +218,13 @@ struct ContentView: View {
                 densityMenu
                 sortMenu
                 Button {
+                    exportCurrentListAsMarkdown()
+                } label: {
+                    Label("Export List", systemImage: "square.and.arrow.up")
+                }
+                .disabled(sortedBooks.isEmpty)
+                .help("Export the books currently shown as a Markdown list")
+                Button {
                     Task { await rescanAndImport() }
                 } label: {
                     Label("Rescan", systemImage: "arrow.clockwise")
@@ -236,6 +244,38 @@ struct ContentView: View {
                 .environmentObject(scanner)
                 .environmentObject(library)
         }
+    }
+
+    // MARK: - Export
+
+    /// A human-readable label for whatever the sidebar is currently
+    /// scoped to, used as both the exported list's title and its default
+    /// filename.
+    private var currentListTitle: String {
+        switch sidebarSelection {
+        case .library, .needsReview, .none:
+            return "All Books"
+        case .folder(let path):
+            return URL(fileURLWithPath: path).lastPathComponent
+        case .format(let rawValue):
+            return BookFormat(rawValue: rawValue)?.sectionTitle ?? "Books"
+        case .tag(let tag):
+            return "#\(tag)"
+        }
+    }
+
+    private func exportCurrentListAsMarkdown() {
+        let markdown = MarkdownExporter.export(books: sortedBooks, listTitle: currentListTitle)
+
+        let panel = NSSavePanel()
+        panel.title = "Export Reading List"
+        panel.nameFieldStringValue = currentListTitle
+            .replacingOccurrences(of: "/", with: "-")
+        panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? markdown.write(to: url, atomically: true, encoding: .utf8)
     }
 
     // MARK: - Scan + Import pipeline
