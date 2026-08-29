@@ -404,82 +404,91 @@ struct ContentView: View {
     @State private var sidebarSelection: SidebarSelection? = .library
 
     // MARK: - Sidebar
+    //
+    // Built as a plain ScrollView/VStack rather than List(.sidebar): List's
+    // implicit AppKit row insets don't line up with a custom safeAreaInset
+    // header, which left the "Stoa" mark, section labels, and row icons all
+    // starting at very slightly different x-positions. Composing the inset
+    // ourselves (outerMargin + rowContentInset, both applied consistently
+    // below) guarantees the app mark, section labels, and every row icon
+    // share one left edge.
 
     private var sidebar: some View {
-        List(selection: $sidebarSelection) {
-            Section {
-                SidebarRow(
-                    title: "All Books",
-                    icon: "books.vertical",
-                    isSelected: sidebarSelection == .library
-                )
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    sidebarSelection = .library
-                }
-                .tag(SidebarSelection.library)
+        ScrollView {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                sidebarRow(title: "All Books", icon: "books.vertical", selection: .library)
 
                 if !library.needsReview.isEmpty {
-                    SidebarRow(
+                    sidebarRow(
                         title: "Needs Review",
                         icon: "questionmark.diamond",
-                        isSelected: sidebarSelection == .needsReview,
+                        selection: .needsReview,
                         badge: "\(library.needsReview.count)"
                     )
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        sidebarSelection = .needsReview
-                    }
-                    .tag(SidebarSelection.needsReview)
                 }
-            }
 
-            Section(header: sidebarSectionLabel("WATCHED FOLDERS")) {
+                sidebarSectionLabel("WATCHED FOLDERS")
+
                 ForEach(scanner.allWatchedFolders, id: \.self) { folder in
-                    SidebarRow(
+                    sidebarRow(
                         title: folder.lastPathComponent,
                         icon: "folder",
-                        isSelected: sidebarSelection == .folder(folder.path)
+                        selection: .folder(folder.path)
                     )
-                    .tag(SidebarSelection.folder(folder.path))
                 }
-            }
 
-            Section(header: sidebarSectionLabel("FORMATS")) {
+                sidebarSectionLabel("FORMATS")
+
                 ForEach(BookFormat.allCases, id: \.self) { format in
-                    SidebarRow(
+                    sidebarRow(
                         title: format.sectionTitle,
                         icon: format.systemImage,
-                        isSelected: sidebarSelection == .format(format.rawValue),
+                        selection: .format(format.rawValue),
                         iconColor: DesignTokens.formatColor(for: format)
                     )
-                    .tag(SidebarSelection.format(format.rawValue))
                 }
-            }
 
-            if !allTags.isEmpty {
-                Section(header: sidebarSectionLabel("TAGS")) {
+                if !allTags.isEmpty {
+                    sidebarSectionLabel("TAGS")
+
                     ForEach(allTags, id: \.self) { tag in
-                        SidebarRow(
-                            title: tag,
-                            icon: "tag",
-                            isSelected: sidebarSelection == .tag(tag)
-                        )
-                        .tag(SidebarSelection.tag(tag))
+                        sidebarRow(title: tag, icon: "tag", selection: .tag(tag))
                     }
                 }
             }
+            .padding(.horizontal, DesignTokens.Sidebar.outerMargin)
+            .padding(.bottom, DesignTokens.Spacing.md)
         }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
         .background(.ultraThinMaterial)
         .safeAreaInset(edge: .top) {
             sidebarAppMark
-                .padding(.horizontal, DesignTokens.Spacing.md)
+                .padding(.horizontal, DesignTokens.Sidebar.contentInset)
                 .padding(.top, DesignTokens.Spacing.sm)
                 .padding(.bottom, DesignTokens.Spacing.xxs)
         }
         .frame(width: DesignTokens.Sidebar.width)
+    }
+
+    /// One selectable row, wired to `sidebarSelection` directly — replaces
+    /// List's native tap-to-select now that the sidebar isn't a List.
+    private func sidebarRow(
+        title: String,
+        icon: String,
+        selection: SidebarSelection,
+        iconColor: Color? = nil,
+        badge: String? = nil
+    ) -> some View {
+        SidebarRow(
+            title: title,
+            icon: icon,
+            isSelected: sidebarSelection == selection,
+            iconColor: iconColor,
+            badge: badge
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            sidebarSelection = selection
+        }
     }
 
     // MARK: - Sidebar App Mark
@@ -522,13 +531,16 @@ struct ContentView: View {
 
     // MARK: - Sidebar Row
 
-    // MARK: - Sidebar Row
-
     /// A single sidebar row: "All Books", a watched folder, or a format
     /// filter. Format rows pass `iconColor` so EPUB/PDF/CBZ each carry a
     /// small, consistent identity color — everything else uses `.primary`.
     /// Has its own hover state so the sidebar gives feedback on mouse-over,
     /// not just on click.
+    ///
+    /// `contentInset` (applied here, inside the selection pill) plus the
+    /// container's `outerMargin` (applied once, around the whole sidebar
+    /// VStack) is what lines this row's icon up with the app mark and
+    /// section labels above — see the comment on `sidebar`.
     private struct SidebarRow: View {
         let title: String
         let icon: String
@@ -543,7 +555,7 @@ struct ContentView: View {
                 Image(systemName: icon)
                     .font(.system(size: DesignTokens.Sidebar.fontSize, weight: .medium))
                     .foregroundStyle(isSelected ? DesignTokens.accent : (iconColor ?? .secondary))
-                    .frame(width: 16)
+                    .frame(width: 16, alignment: .leading)
                 Text(title)
                     .font(.system(size: DesignTokens.Sidebar.fontSize))
                     .fontWeight(isSelected ? .semibold : .regular)
@@ -559,10 +571,11 @@ struct ContentView: View {
                         .background(DesignTokens.accent, in: Capsule())
                 }
 
-                Spacer()
+                Spacer(minLength: 0)
             }
             .padding(.vertical, DesignTokens.Sidebar.rowPaddingV)
-            .padding(.horizontal, DesignTokens.Sidebar.rowPaddingH)
+            .padding(.horizontal, DesignTokens.Sidebar.contentInset)
+            .frame(height: DesignTokens.Sidebar.rowHeight)
             .background(
                 isSelected
                     ? DesignTokens.accent.opacity(0.14)
@@ -578,6 +591,9 @@ struct ContentView: View {
 
     // MARK: - Sidebar Section Label
 
+    /// `contentInset` here (matching the row icon's own leading padding)
+    /// is what makes section labels start flush with the icons in the
+    /// rows beneath them, not the row's highlighted-pill edge.
     private func sidebarSectionLabel(_ title: String) -> some View {
         Text(title)
             .font(DesignTokens.sansFont(
@@ -587,6 +603,9 @@ struct ContentView: View {
             .tracking(DesignTokens.Sidebar.SectionLabel.tracking)
             .foregroundStyle(.tertiary)
             .textCase(.uppercase)
+            .padding(.horizontal, DesignTokens.Sidebar.contentInset)
+            .padding(.top, DesignTokens.Spacing.md)
+            .padding(.bottom, DesignTokens.Spacing.xxs)
     }
 
     // MARK: - Detail Content

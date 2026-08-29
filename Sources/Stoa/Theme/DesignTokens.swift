@@ -90,9 +90,17 @@ enum DesignTokens {
         static let width: CGFloat = 232
         static let rowHeight: CGFloat = 30
         static let rowPaddingV: CGFloat = 6
-        static let rowPaddingH: CGFloat = 8
         static let rowCornerRadius: CGFloat = 10
         static let iconLabelGap: CGFloat = 9
+
+        /// Margin around the whole sidebar VStack (List(.sidebar) used to
+        /// supply this implicitly; now explicit so it composes predictably
+        /// with `contentInset` below).
+        static let outerMargin: CGFloat = 8
+        /// Padding between a selection pill's own edge and its icon/text —
+        /// combined with `outerMargin`, this is what the app mark, section
+        /// labels, and every row icon align to (8 + 8 = 16, i.e. Spacing.md).
+        static let contentInset: CGFloat = 8
 
         /// App mark: 28x28 rounded square
         enum AppMark {
