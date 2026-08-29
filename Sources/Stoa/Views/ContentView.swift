@@ -114,13 +114,22 @@ struct ContentView: View {
             if let format = BookFormat(rawValue: rawValue) {
                 books = books.filter { $0.format == format }
             }
+        case .tag(let tag):
+            books = books.filter { $0.tags.contains(tag) }
         }
 
         guard !searchText.isEmpty else { return books }
         return books.filter {
             $0.title.localizedCaseInsensitiveContains(searchText)
                 || ($0.author?.localizedCaseInsensitiveContains(searchText) ?? false)
+                || $0.tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
         }
+    }
+
+    /// Every distinct tag across the library, alphabetically, for the
+    /// sidebar's TAGS section — only shown once at least one book has one.
+    private var allTags: [String] {
+        Set(library.books.flatMap(\.tags)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     private var sortedBooks: [Book] {
@@ -334,6 +343,7 @@ struct ContentView: View {
         case needsReview
         case folder(String)
         case format(String)
+        case tag(String)
     }
 
     @State private var sidebarSelection: SidebarSelection? = .library
@@ -389,6 +399,19 @@ struct ContentView: View {
                         iconColor: DesignTokens.formatColor(for: format)
                     )
                     .tag(SidebarSelection.format(format.rawValue))
+                }
+            }
+
+            if !allTags.isEmpty {
+                Section(header: sidebarSectionLabel("TAGS")) {
+                    ForEach(allTags, id: \.self) { tag in
+                        SidebarRow(
+                            title: tag,
+                            icon: "tag",
+                            isSelected: sidebarSelection == .tag(tag)
+                        )
+                        .tag(SidebarSelection.tag(tag))
+                    }
                 }
             }
         }
