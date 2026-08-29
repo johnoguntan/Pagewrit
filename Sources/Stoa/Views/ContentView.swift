@@ -168,18 +168,38 @@ struct ContentView: View {
         library.continueReading.first
     }
 
+    /// The book that's been sitting unread the longest — a quiet nudge
+    /// to get to something already on the shelf, rather than another
+    /// "recently added" card. Excludes whatever's already shown earlier
+    /// in the rail so the row never repeats a book. Keyed by contentHash
+    /// (not Book's SwiftData id) to match how the rest of the app already
+    /// identifies a book — see SpotlightIndexer, dedup, etc.
+    private func discoverBook(excluding shownHashes: Set<String>) -> Book? {
+        library.books
+            .filter { !shownHashes.contains($0.contentHash) && ($0.readingProgress ?? 0) == 0 }
+            .min { $0.addedAt < $1.addedAt }
+    }
+
     /// Cards for the hero rail, in display order. Continue Reading leads
-    /// when there's something in progress; Recently Added follows as
-    /// long as it isn't the same book already shown. More categories
-    /// (e.g. a format or tag spotlight) can extend this list later
-    /// without touching the rail's layout.
-    private var heroEntries: [(book: Book, continueReading: Bool)] {
-        var entries: [(book: Book, continueReading: Bool)] = []
+    /// when there's something in progress, then Recently Added, then a
+    /// Discover pick — each skipped if it would repeat a book already
+    /// shown earlier in the row. More categories (a format or tag
+    /// spotlight) can extend this list later without touching the
+    /// rail's layout.
+    private var heroEntries: [(book: Book, kind: HeroKind)] {
+        var entries: [(book: Book, kind: HeroKind)] = []
+        var shownHashes: Set<String> = []
+
         if let resuming = continueReadingBook {
-            entries.append((resuming, true))
+            entries.append((resuming, .continueReading))
+            shownHashes.insert(resuming.contentHash)
         }
-        if let mostRecent = mostRecentBook, mostRecent.id != continueReadingBook?.id {
-            entries.append((mostRecent, false))
+        if let mostRecent = mostRecentBook, !shownHashes.contains(mostRecent.contentHash) {
+            entries.append((mostRecent, .recentlyAdded))
+            shownHashes.insert(mostRecent.contentHash)
+        }
+        if let discover = discoverBook(excluding: shownHashes) {
+            entries.append((discover, .discover))
         }
         return entries
     }
@@ -659,8 +679,8 @@ struct ContentView: View {
                     if searchText.isEmpty, !heroEntries.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(alignment: .top, spacing: DesignTokens.Spacing.lg) {
-                                ForEach(heroEntries, id: \.book.id) { entry in
-                                    HeroBand(book: entry.book, continueReading: entry.continueReading)
+                                ForEach(heroEntries, id: \.book.contentHash) { entry in
+                                    HeroBand(book: entry.book, kind: entry.kind)
                                         .frame(width: DesignTokens.Hero.cardWidth)
                                 }
                             }
@@ -759,16 +779,48 @@ struct ProgressBar: View {
     }
 }
 
+// MARK: - HeroKind
+
+/// What a hero card is spotlighting. Each case owns its own eyebrow
+/// label, CTA verb, and meta line — adding a new kind of spotlight later
+/// (a tag, a format, whatever) means adding a case here, not touching
+/// HeroBand's layout.
+enum HeroKind {
+    case continueReading
+    case recentlyAdded
+    case discover
+
+    var eyebrow: String {
+        switch self {
+        case .continueReading: "Continue reading"
+        case .recentlyAdded: "Recently added"
+        case .discover: "Still on your shelf"
+        }
+    }
+
+    /// Only Continue Reading gets the accent color on its eyebrow — it's
+    /// the one card representing something the user already committed
+    /// to, so it earns the one owned color. The other two stay quiet.
+    var usesAccentEyebrow: Bool { self == .continueReading }
+
+    var buttonLabel: String {
+        switch self {
+        case .continueReading: "Resume"
+        case .recentlyAdded: "Open"
+        case .discover: "Read"
+        }
+    }
+}
+
 // MARK: - HeroBand
 
-/// Full-width spotlight above the grid: either the book you're actively
-/// reading (progress bar + Resume) or, if nothing's in progress, the most
-/// recently added book.
+/// One card in the horizontally scrolling hero rail. All cards share a
+/// fixed size (DesignTokens.Hero.height/cardWidth) and a fixed-height
+/// title block, so the eyebrow, title, and button land at the same Y on
+/// every card regardless of how much text any one book contributes.
 struct HeroBand: View {
     let book: Book
-    /// When true, renders as "Continue Reading" (progress bar + Resume)
-    /// instead of the default "Recently added" spotlight.
-    var continueReading: Bool = false
+    var kind: HeroKind = .recentlyAdded
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.colorScheme) private var colorScheme
     @State private var showReader = false
@@ -812,15 +864,18 @@ struct HeroBand: View {
 
                 // Spacing here is deliberately uneven — see
                 // DesignTokens.Hero.Rhythm — rather than one repeated
-                // VStack gap, which is what made this card feel cramped.
+                // VStack gap. The title's reserved blockHeight, and the
+                // Spacer + fixed card height pinning the button to the
+                // bottom, are what keep every card in the rail aligned
+                // regardless of title length or which meta row it shows.
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(continueReading ? "Continue reading" : "Recently added")
+                    Text(kind.eyebrow)
                         .font(DesignTokens.sansFont(
                             size: DesignTokens.Hero.Eyebrow.fontSize,
                             weight: .semibold
                         ))
                         .tracking(DesignTokens.Hero.Eyebrow.tracking)
-                        .foregroundStyle(continueReading ? AnyShapeStyle(DesignTokens.accent) : AnyShapeStyle(.tertiary))
+                        .foregroundStyle(kind.usesAccentEyebrow ? AnyShapeStyle(DesignTokens.accent) : AnyShapeStyle(.tertiary))
                         .textCase(.uppercase)
                         .padding(.bottom, DesignTokens.Hero.Rhythm.afterEyebrow)
 
@@ -832,9 +887,11 @@ struct HeroBand: View {
                         .tracking(DesignTokens.Hero.Title.tracking)
                         .foregroundStyle(.primary)
                         .lineLimit(2)
+                        .frame(height: DesignTokens.Hero.Title.blockHeight, alignment: .topLeading)
                         .padding(.bottom, DesignTokens.Hero.Rhythm.afterTitle)
 
-                    if continueReading {
+                    switch kind {
+                    case .continueReading:
                         Text("\(Int((book.readingProgress ?? 0) * 100))% \u{00b7} last opened \(relativeOpened)")
                             .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
                             .foregroundStyle(.secondary)
@@ -842,18 +899,22 @@ struct HeroBand: View {
 
                         ProgressBar(fraction: book.readingProgress ?? 0)
                             .frame(width: 220, height: 4)
-                            .padding(.bottom, DesignTokens.Hero.Rhythm.beforeButton)
-                    } else {
+                    case .recentlyAdded:
                         Text("\(book.format.rawValue.uppercased()) \u{00b7} \(relativeAdded)")
                             .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
                             .foregroundStyle(.secondary)
-                            .padding(.bottom, DesignTokens.Hero.Rhythm.beforeButton)
+                    case .discover:
+                        Text("Added \(relativeAdded) \u{00b7} not started yet")
+                            .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
+                            .foregroundStyle(.secondary)
                     }
+
+                    Spacer(minLength: 0)
 
                     Button {
                         showReader = true
                     } label: {
-                        Text(continueReading ? "Resume" : "Open")
+                        Text(kind.buttonLabel)
                             .font(DesignTokens.sansFont(
                                 size: DesignTokens.Hero.Button.fontSize,
                                 weight: .semibold
@@ -868,6 +929,7 @@ struct HeroBand: View {
                     }
                     .buttonStyle(TactileButtonStyle())
                 }
+                .frame(height: DesignTokens.Hero.height - DesignTokens.Hero.paddingV * 2)
 
                 Spacer(minLength: 0)
             }
@@ -875,6 +937,7 @@ struct HeroBand: View {
             .padding(.vertical, DesignTokens.Hero.paddingV)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(height: DesignTokens.Hero.height)
         .sheet(isPresented: $showReader) {
             BookReaderSheet(book: book)
                 .environmentObject(library)

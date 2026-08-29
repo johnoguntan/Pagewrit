@@ -173,6 +173,17 @@ enum DesignTokens {
         /// pick a single thing to show.
         static let cardWidth: CGFloat = 440
 
+        /// Fixed card height. With several cards side by side in a row,
+        /// letting each size to its own content (what an earlier pass
+        /// did) meant a 1-line title card and a 2-line title card landed
+        /// at different heights, and their Resume/Open buttons ended up
+        /// at different Y positions — the row read as unaligned. A fixed
+        /// height, combined with Title.blockHeight below and a Spacer
+        /// pinning the button to the bottom, makes every card's eyebrow,
+        /// title, and button line up across the whole row regardless of
+        /// how much text any one card has.
+        static let height: CGFloat = 236
+
         static let paddingH: CGFloat = 28
         static let paddingV: CGFloat = 28
 
@@ -184,6 +195,10 @@ enum DesignTokens {
         enum Title {
             static let fontSize: CGFloat = 32
             static let tracking: CGFloat = -0.5
+            /// Reserves 2 lines' worth of height regardless of actual
+            /// line count, so whatever comes after the title (meta text,
+            /// progress bar) starts at the same Y on every card.
+            static let blockHeight: CGFloat = 80
         }
 
         enum Meta {
