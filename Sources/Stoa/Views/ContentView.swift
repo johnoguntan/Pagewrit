@@ -524,7 +524,7 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 22, height: 22)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(TactileButtonStyle())
             .help("Settings")
         }
     }
@@ -779,19 +779,22 @@ struct HeroBand: View {
                 colors: [DesignTokens.accent.opacity(DesignTokens.Hero.glowOpacity), .clear],
                 center: .topLeading,
                 startRadius: 0,
-                endRadius: 340
+                endRadius: 360
             )
             .allowsHitTesting(false)
 
             HStack(alignment: .center, spacing: DesignTokens.Spacing.xl) {
-                MattedCoverView(book: book, cornerRadius: 10)
+                MattedCoverView(book: book, cornerRadius: 11)
                     .frame(width: DesignTokens.Hero.coverWidth)
                     .shadow(
                         color: .black.opacity(colorScheme == .dark ? 0.5 : 0.25),
-                        radius: 16, x: 0, y: 10
+                        radius: 18, x: 0, y: 12
                     )
 
-                VStack(alignment: .leading, spacing: 6) {
+                // Spacing here is deliberately uneven — see
+                // DesignTokens.Hero.Rhythm — rather than one repeated
+                // VStack gap, which is what made this card feel cramped.
+                VStack(alignment: .leading, spacing: 0) {
                     Text(continueReading ? "Continue reading" : "Recently added")
                         .font(DesignTokens.sansFont(
                             size: DesignTokens.Hero.Eyebrow.fontSize,
@@ -800,6 +803,7 @@ struct HeroBand: View {
                         .tracking(DesignTokens.Hero.Eyebrow.tracking)
                         .foregroundStyle(continueReading ? AnyShapeStyle(DesignTokens.accent) : AnyShapeStyle(.tertiary))
                         .textCase(.uppercase)
+                        .padding(.bottom, DesignTokens.Hero.Rhythm.afterEyebrow)
 
                     Text(book.title)
                         .font(DesignTokens.serifFont(
@@ -809,21 +813,22 @@ struct HeroBand: View {
                         .tracking(DesignTokens.Hero.Title.tracking)
                         .foregroundStyle(.primary)
                         .lineLimit(2)
+                        .padding(.bottom, DesignTokens.Hero.Rhythm.afterTitle)
 
                     if continueReading {
                         Text("\(Int((book.readingProgress ?? 0) * 100))% \u{00b7} last opened \(relativeOpened)")
                             .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
                             .foregroundStyle(.secondary)
+                            .padding(.bottom, DesignTokens.Hero.Rhythm.beforeMeta)
 
                         ProgressBar(fraction: book.readingProgress ?? 0)
-                            .frame(width: 200, height: 4)
-                            .padding(.top, 2)
-                            .padding(.bottom, DesignTokens.Spacing.xs - 2)
+                            .frame(width: 220, height: 4)
+                            .padding(.bottom, DesignTokens.Hero.Rhythm.beforeButton)
                     } else {
                         Text("\(book.format.rawValue.uppercased()) \u{00b7} \(relativeAdded)")
                             .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
                             .foregroundStyle(.secondary)
-                            .padding(.bottom, DesignTokens.Spacing.xs)
+                            .padding(.bottom, DesignTokens.Hero.Rhythm.beforeButton)
                     }
 
                     Button {
@@ -842,20 +847,36 @@ struct HeroBand: View {
                                 in: RoundedRectangle(cornerRadius: DesignTokens.Hero.Button.cornerRadius)
                             )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(TactileButtonStyle())
                 }
 
                 Spacer(minLength: 0)
             }
-            .padding(DesignTokens.Spacing.xl)
+            .padding(.horizontal, DesignTokens.Hero.paddingH)
+            .padding(.vertical, DesignTokens.Hero.paddingV)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(height: DesignTokens.Hero.height)
         .sheet(isPresented: $showReader) {
             BookReaderSheet(book: book)
                 .environmentObject(library)
         }
         .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Hero.cornerRadius))
+    }
+}
+
+// MARK: - TactileButtonStyle
+
+/// A button that answers the click instead of just changing a route. On
+/// its own a SwiftUI Button with .plain style gives zero physical
+/// feedback — this scales it down slightly on press, per the "respond
+/// instantly, continuously, and physically" principle behind Apple's own
+/// controls. Reach for this on any button that should feel real, not just
+/// the hero's Resume/Open.
+struct TactileButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 

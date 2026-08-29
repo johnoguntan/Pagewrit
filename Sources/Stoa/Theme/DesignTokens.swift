@@ -155,20 +155,29 @@ enum DesignTokens {
 
     // MARK: - Hero (Recently Added / Continue Reading band)
 
+    /// No fixed height: the card sizes to its content (the cover image
+    /// naturally drives it to ~200pt via coverWidth + paddingV). A fixed
+    /// 148pt was squeezing eyebrow/title/meta/progress/button into a box
+    /// with almost no room to breathe — the actual complaint that started
+    /// this rework. Internal spacing is deliberately uneven (see Rhythm)
+    /// rather than one repeated gap, so the block reads with real rhythm
+    /// instead of mechanical uniformity.
     enum Hero {
-        static let height: CGFloat = 148
-        static let cornerRadius: CGFloat = 18
-        static let coverWidth: CGFloat = 96
-        static let glowOpacity: Double = 0.14
+        static let cornerRadius: CGFloat = 20
+        static let coverWidth: CGFloat = 104
+        static let glowOpacity: Double = 0.16
+
+        static let paddingH: CGFloat = 28
+        static let paddingV: CGFloat = 28
 
         enum Eyebrow {
             static let fontSize: CGFloat = 11
-            static let tracking: CGFloat = 0.5
+            static let tracking: CGFloat = 0.6
         }
 
         enum Title {
-            static let fontSize: CGFloat = 30
-            static let tracking: CGFloat = -0.4
+            static let fontSize: CGFloat = 32
+            static let tracking: CGFloat = -0.5
         }
 
         enum Meta {
@@ -177,9 +186,19 @@ enum DesignTokens {
 
         enum Button {
             static let fontSize: CGFloat = 13
-            static let paddingV: CGFloat = 9
-            static let paddingH: CGFloat = 18
-            static let cornerRadius: CGFloat = 9
+            static let paddingV: CGFloat = 10
+            static let paddingH: CGFloat = 20
+            static let cornerRadius: CGFloat = 10
+        }
+
+        /// Uneven on purpose: tightest right under the title (eyebrow and
+        /// title read as one thought), most generous just above the
+        /// button (the one action on the card earns space of its own).
+        enum Rhythm {
+            static let afterEyebrow: CGFloat = 8
+            static let afterTitle: CGFloat = 6
+            static let beforeMeta: CGFloat = 10
+            static let beforeButton: CGFloat = 18
         }
     }
 
