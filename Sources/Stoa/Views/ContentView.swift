@@ -168,6 +168,22 @@ struct ContentView: View {
         library.continueReading.first
     }
 
+    /// Cards for the hero rail, in display order. Continue Reading leads
+    /// when there's something in progress; Recently Added follows as
+    /// long as it isn't the same book already shown. More categories
+    /// (e.g. a format or tag spotlight) can extend this list later
+    /// without touching the rail's layout.
+    private var heroEntries: [(book: Book, continueReading: Bool)] {
+        var entries: [(book: Book, continueReading: Bool)] = []
+        if let resuming = continueReadingBook {
+            entries.append((resuming, true))
+        }
+        if let mostRecent = mostRecentBook, mostRecent.id != continueReadingBook?.id {
+            entries.append((mostRecent, false))
+        }
+        return entries
+    }
+
     // MARK: - Grid layout
 
     private var columns: [GridItem] {
@@ -640,14 +656,17 @@ struct ContentView: View {
                 emptyState
             } else {
                 ScrollView {
-                    if searchText.isEmpty, let resuming = continueReadingBook {
-                        HeroBand(book: resuming, continueReading: true)
+                    if searchText.isEmpty, !heroEntries.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(alignment: .top, spacing: DesignTokens.Spacing.lg) {
+                                ForEach(heroEntries, id: \.book.id) { entry in
+                                    HeroBand(book: entry.book, continueReading: entry.continueReading)
+                                        .frame(width: DesignTokens.Hero.cardWidth)
+                                }
+                            }
                             .padding(.horizontal, DesignTokens.Spacing.xl)
-                            .padding(.top, DesignTokens.Spacing.lg)
-                    } else if searchText.isEmpty, let mostRecent = mostRecentBook {
-                        HeroBand(book: mostRecent)
-                            .padding(.horizontal, DesignTokens.Spacing.xl)
-                            .padding(.top, DesignTokens.Spacing.lg)
+                        }
+                        .padding(.top, DesignTokens.Spacing.lg)
                     }
 
                     LazyVGrid(columns: columns, spacing: gridDensity.gridSpacing) {

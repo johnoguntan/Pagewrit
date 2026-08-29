@@ -167,6 +167,12 @@ enum DesignTokens {
         static let coverWidth: CGFloat = 104
         static let glowOpacity: Double = 0.16
 
+        /// Fixed width for a hero card in the horizontally scrolling row
+        /// (Continue Reading, Recently Added, and room for more later) —
+        /// a native "Up Next" style rail rather than one card that has to
+        /// pick a single thing to show.
+        static let cardWidth: CGFloat = 440
+
         static let paddingH: CGFloat = 28
         static let paddingV: CGFloat = 28
 
