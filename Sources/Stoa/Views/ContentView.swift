@@ -779,7 +779,7 @@ struct HeroBand: View {
                             weight: .semibold
                         ))
                         .tracking(DesignTokens.Hero.Eyebrow.tracking)
-                        .foregroundStyle(continueReading ? DesignTokens.accent : .tertiary)
+                        .foregroundStyle(continueReading ? AnyShapeStyle(DesignTokens.accent) : AnyShapeStyle(.tertiary))
                         .textCase(.uppercase)
 
                     Text(book.title)
