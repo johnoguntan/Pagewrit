@@ -5,9 +5,11 @@ import AppKit
 /// Downloads), and remove ones she added before. Default folders are always
 /// scanned and aren't listed as removable here.
 ///
-/// Styled to match the rest of the app (DesignTokens): elevated cards on a
-/// near-black surface, icon-accented section headers, real (not
-/// imperceptible) elevation contrast — see DesignTokens.elevatedSurface.
+/// Deliberately built closer to a native macOS "System Settings" inset list
+/// than a dashboard: plain text section labels (no colored icon chips), thin
+/// row dividers instead of separate floating cards, minimal shadow. The
+/// earlier version leaned on the icon-chip + shadow-card pattern in every
+/// section, which is what made it read as templated rather than native.
 struct SettingsView: View {
     @EnvironmentObject private var scanner: ScannerService
     @Environment(\.colorScheme) private var colorScheme
@@ -21,54 +23,69 @@ struct SettingsView: View {
                 .overlay(DesignTokens.hairline(colorScheme: colorScheme))
 
             ScrollView {
-            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xl) {
-                section(title: "Always scanned", icon: "checkmark.circle.fill", tint: DesignTokens.accent) {
-                    VStack(spacing: 2) {
-                        ForEach(scanner.defaultFolders, id: \.self) { folder in
-                            folderRow(path: folder.path, removable: false, onRemove: {})
-                        }
-                    }
-                }
-
-                section(title: "Additional folders", icon: "folder.badge.plus", tint: DesignTokens.formatColor(for: .cbz)) {
-                    VStack(spacing: 2) {
-                        if scanner.extraFolders.isEmpty {
-                            Text("No additional folders yet — add one below to widen the scan.")
-                                .font(DesignTokens.sansFont(size: 13))
-                                .foregroundStyle(.tertiary)
-                                .padding(.vertical, DesignTokens.Spacing.xs)
-                        }
-                        ForEach(scanner.extraFolders, id: \.self) { folder in
-                            folderRow(path: folder.path, removable: true) {
-                                scanner.removeExtraFolder(folder)
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.lg) {
+                    group(label: "Always scanned") {
+                        VStack(spacing: 0) {
+                            ForEach(Array(scanner.defaultFolders.enumerated()), id: \.element) { index, folder in
+                                if index > 0 { rowDivider }
+                                folderRow(path: folder.path, removable: false, onRemove: {})
                             }
                         }
                     }
 
-                    addFolderButton
-                        .padding(.top, DesignTokens.Spacing.sm)
-                }
-
-                section(title: "Library", icon: "arrow.triangle.2.circlepath", tint: DesignTokens.formatColor(for: .epub)) {
-                    HStack {
-                        rescanButton
-                        Spacer()
-                        if let lastScan = scanner.lastScanDate {
-                            Text("Last scanned \(lastScan.formatted(date: .abbreviated, time: .shortened))")
-                                .font(DesignTokens.sansFont(size: 12))
-                                .foregroundStyle(.tertiary)
-                        } else {
-                            Text("Not scanned yet")
-                                .font(DesignTokens.sansFont(size: 12))
-                                .foregroundStyle(.tertiary)
+                    group(label: "Additional folders") {
+                        VStack(spacing: 0) {
+                            if scanner.extraFolders.isEmpty {
+                                Text("No additional folders yet.")
+                                    .font(DesignTokens.sansFont(size: 12.5))
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.vertical, 9)
+                                    .padding(.horizontal, DesignTokens.Spacing.md)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            ForEach(Array(scanner.extraFolders.enumerated()), id: \.element) { index, folder in
+                                if index > 0 { rowDivider }
+                                folderRow(path: folder.path, removable: true) {
+                                    scanner.removeExtraFolder(folder)
+                                }
+                            }
+                            rowDivider
+                            addFolderRow
                         }
                     }
+
+                    group(label: "Library") {
+                        HStack(spacing: DesignTokens.Spacing.sm) {
+                            Text("Rescan")
+                                .font(DesignTokens.sansFont(size: 13))
+                                .foregroundStyle(.primary)
+
+                            Spacer()
+
+                            if let lastScan = scanner.lastScanDate {
+                                Text(lastScan.formatted(date: .abbreviated, time: .shortened))
+                                    .font(DesignTokens.sansFont(size: 12))
+                                    .foregroundStyle(.tertiary)
+                            } else {
+                                Text("Not scanned yet")
+                                    .font(DesignTokens.sansFont(size: 12))
+                                    .foregroundStyle(.tertiary)
+                            }
+
+                            rescanButton
+                        }
+                        .padding(.vertical, 9)
+                        .padding(.horizontal, DesignTokens.Spacing.md)
+                    }
+
+                    footer
                 }
-            }
-            .padding(DesignTokens.Spacing.xl)
+                .padding(.horizontal, DesignTokens.Spacing.xl)
+                .padding(.top, DesignTokens.Spacing.lg)
+                .padding(.bottom, DesignTokens.Spacing.xl)
             }
         }
-        .frame(width: 520, height: 460)
+        .frame(width: 480, height: 440)
         .background(DesignTokens.background.ignoresSafeArea())
     }
 
@@ -77,7 +94,7 @@ struct SettingsView: View {
     private var header: some View {
         HStack {
             Text("Settings")
-                .font(DesignTokens.serifFont(size: 17, weight: .semibold))
+                .font(DesignTokens.serifFont(size: 16, weight: .semibold))
                 .foregroundStyle(.primary)
 
             Spacer()
@@ -86,70 +103,61 @@ struct SettingsView: View {
                 dismiss()
             } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 18))
+                    .font(.system(size: 17))
                     .foregroundStyle(.tertiary)
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, DesignTokens.Spacing.xl)
-        .padding(.vertical, DesignTokens.Spacing.md)
+        .padding(.vertical, 14)
     }
 
-    // MARK: - Section
+    // MARK: - Group
 
-    /// Icon-accented label above a grouped, elevated card. The icon chip
-    /// gives each section a small, distinct identity at a glance instead of
-    /// three visually-identical gray blocks.
-    private func section<Content: View>(
-        title: String,
-        icon: String,
-        tint: Color,
+    /// A plain, small-caps label above a single inset container — the
+    /// native macOS System Settings shape, not a shadowed dashboard card.
+    private func group<Content: View>(
+        label: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            HStack(spacing: DesignTokens.Spacing.xs) {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .frame(width: 20, height: 20)
-                    .background(tint.opacity(0.14), in: RoundedRectangle(cornerRadius: 6))
-
-                Text(title)
-                    .font(DesignTokens.sansFont(size: 12, weight: .semibold))
-                    .tracking(0.3)
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(DesignTokens.sansFont(size: 11, weight: .semibold))
+                .tracking(0.4)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .padding(.leading, 2)
 
             VStack(alignment: .leading, spacing: 0) {
                 content()
             }
-            .padding(DesignTokens.Spacing.md)
-            .background(DesignTokens.elevatedSurface, in: RoundedRectangle(cornerRadius: 12))
+            .background(DesignTokens.elevatedSurface, in: RoundedRectangle(cornerRadius: 10))
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 10)
                     .stroke(DesignTokens.hairline(colorScheme: colorScheme), lineWidth: 1)
             )
-            .shadow(
-                color: .black.opacity(colorScheme == .dark ? 0.30 : 0.04),
-                radius: 14, x: 0, y: 4
-            )
         }
+    }
+
+    private var rowDivider: some View {
+        Divider()
+            .overlay(DesignTokens.hairline(colorScheme: colorScheme))
+            .padding(.leading, DesignTokens.Spacing.md)
     }
 
     // MARK: - Folder Row
 
     private func folderRow(path: String, removable: Bool, onRemove: @escaping () -> Void) -> some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
-            Image(systemName: "folder.fill")
+            Image(systemName: "folder")
                 .font(.system(size: 12))
                 .foregroundStyle(.tertiary)
-                .frame(width: 16)
+                .frame(width: 15)
 
             Text(path)
                 .font(DesignTokens.sansFont(size: 13))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
@@ -157,55 +165,72 @@ struct SettingsView: View {
 
             if removable {
                 Button(action: onRemove) {
-                    Image(systemName: "xmark.circle.fill")
+                    Image(systemName: "minus.circle.fill")
                         .font(.system(size: 13))
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.vertical, DesignTokens.Spacing.xs)
-        .padding(.horizontal, DesignTokens.Spacing.xs)
-        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 6))
+        .padding(.vertical, 8)
+        .padding(.horizontal, DesignTokens.Spacing.md)
     }
 
-    // MARK: - Buttons
-
-    private var addFolderButton: some View {
+    private var addFolderRow: some View {
         Button(action: addFolder) {
-            HStack(spacing: 6) {
-                Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .semibold))
+            HStack(spacing: DesignTokens.Spacing.sm) {
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(DesignTokens.accent)
                 Text("Add Folder\u{2026}")
-                    .font(DesignTokens.sansFont(size: 13, weight: .medium))
+                    .font(DesignTokens.sansFont(size: 13))
+                    .foregroundStyle(.primary)
+                Spacer()
             }
-            .foregroundStyle(DesignTokens.accent)
+            .padding(.vertical, 8)
+            .padding(.horizontal, DesignTokens.Spacing.md)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
+
+    // MARK: - Buttons
 
     private var rescanButton: some View {
         Button {
             Task { await scanner.scan() }
         } label: {
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 if scanner.isScanning {
                     ProgressView()
                         .controlSize(.small)
                 } else {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                 }
-                Text("Rescan now")
-                    .font(DesignTokens.sansFont(size: 13, weight: .semibold))
+                Text("Rescan")
+                    .font(DesignTokens.sansFont(size: 12.5, weight: .medium))
             }
             .foregroundStyle(.white)
-            .padding(.vertical, 8)
-            .padding(.horizontal, 16)
-            .background(DesignTokens.accent, in: RoundedRectangle(cornerRadius: 8))
+            .padding(.vertical, 5)
+            .padding(.horizontal, 12)
+            .background(DesignTokens.accent, in: Capsule())
         }
         .buttonStyle(.plain)
         .disabled(scanner.isScanning)
+    }
+
+    // MARK: - Footer
+
+    private var footer: some View {
+        HStack {
+            Spacer()
+            Text("Stoa \u{00B7} 0.1.0")
+                .font(DesignTokens.serifFont(size: 11, weight: .regular))
+                .foregroundStyle(.quaternary)
+            Spacer()
+        }
+        .padding(.top, DesignTokens.Spacing.xs)
     }
 
     private func addFolder() {
