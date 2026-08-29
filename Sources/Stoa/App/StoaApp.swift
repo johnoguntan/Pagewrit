@@ -5,6 +5,10 @@ extension Notification.Name {
     /// Posted when the user taps a Stoa result in macOS Spotlight — carries
     /// the tapped book's contentHash as the notification's object.
     static let stoaOpenBookFromSpotlight = Notification.Name("stoaOpenBookFromSpotlight")
+
+    /// Posted after GutenbergService finishes saving a downloaded EPUB to
+    /// disk, so ContentView knows to rescan + import it into the library.
+    static let stoaBooksDownloaded = Notification.Name("stoaBooksDownloaded")
 }
 
 /// Routes a Spotlight tap back into the running app. NSApplicationDelegate

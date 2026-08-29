@@ -68,6 +68,7 @@ struct ContentView: View {
     @State private var importTaskID: UUID?
     @AppStorage("stoa.gridDensity") private var gridDensityRaw: String = GridDensity.comfortable.rawValue
     @State private var spotlightBook: Book?
+    @State private var showDownloadBooks = false
 
     private var gridDensity: GridDensity {
         GridDensity(rawValue: gridDensityRaw) ?? .comfortable
@@ -249,10 +250,19 @@ struct ContentView: View {
             else { return }
             spotlightBook = book
         }
+        .onReceive(NotificationCenter.default.publisher(for: .stoaBooksDownloaded)) { _ in
+            Task { await rescanAndImport() }
+        }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 densityMenu
                 sortMenu
+                Button {
+                    showDownloadBooks = true
+                } label: {
+                    Label("Get Books", systemImage: "arrow.down.circle")
+                }
+                .help("Search and download free public-domain books")
                 Button {
                     exportCurrentListAsMarkdown()
                 } label: {
@@ -279,6 +289,9 @@ struct ContentView: View {
             SettingsView()
                 .environmentObject(scanner)
                 .environmentObject(library)
+        }
+        .sheet(isPresented: $showDownloadBooks) {
+            DownloadBooksView()
         }
     }
 
