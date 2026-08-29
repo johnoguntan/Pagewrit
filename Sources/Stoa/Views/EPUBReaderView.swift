@@ -5,6 +5,8 @@ import WebKit
 import EPUBKit
 #endif
 
+import Foundation
+
 // MARK: - EPUBReaderView
 
 /// In-app EPUB reader. Renders one chapter at a time in a WKWebView,
@@ -23,6 +25,7 @@ struct EPUBReaderView: View {
     @State private var isLoading = true
     @State private var loadFailed = false
     @AppStorage("stoa.epubFontScale") private var fontScale: Double = 1.0
+    @StateObject private var speech = SpeechController()
 
     private let fontScaleRange: ClosedRange<Double> = 0.75...2.0
     private let fontScaleStep: Double = 0.125
@@ -51,6 +54,8 @@ struct EPUBReaderView: View {
         .background(DesignTokens.background.ignoresSafeArea())
         .onAppear(perform: load)
         .onAppear { library.markOpened(book) }
+        .onChange(of: currentChapterIndex) { _, _ in speech.stop() }
+        .onDisappear { speech.stop() }
         .focusable()
         .onKeyPress(.rightArrow) { advance(1); return .handled }
         .onKeyPress(.leftArrow) { advance(-1); return .handled }
@@ -74,6 +79,8 @@ struct EPUBReaderView: View {
             }
 
             fontSizeControls
+
+            readAloudButton
 
             Button {
                 dismiss()
@@ -121,6 +128,33 @@ struct EPUBReaderView: View {
             .help("Larger text")
         }
         .padding(.trailing, DesignTokens.Spacing.xs)
+    }
+
+    // MARK: - Read Aloud
+
+    private var readAloudButton: some View {
+        Button {
+            if speech.isSpeaking {
+                speech.stop()
+            } else {
+                speakCurrentChapter()
+            }
+        } label: {
+            Image(systemName: speech.isSpeaking ? "speaker.wave.2.fill" : "speaker.wave.2")
+                .font(.system(size: 13))
+                .foregroundStyle(speech.isSpeaking ? DesignTokens.accent : .secondary)
+        }
+        .buttonStyle(.plain)
+        .disabled(chapterURLs.isEmpty)
+        .help(speech.isSpeaking ? "Stop reading aloud" : "Read this chapter aloud")
+        .padding(.trailing, DesignTokens.Spacing.xs)
+    }
+
+    private func speakCurrentChapter() {
+        guard chapterURLs.indices.contains(currentChapterIndex) else { return }
+        let url = chapterURLs[currentChapterIndex]
+        guard let html = try? String(contentsOf: url, encoding: .utf8) else { return }
+        speech.speak(TextExtractor.stripHTML(html))
     }
 
     // MARK: - Footer

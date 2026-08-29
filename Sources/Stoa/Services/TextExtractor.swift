@@ -58,9 +58,9 @@ enum TextExtractor {
     }
 
     /// Minimal, dependency-free HTML-to-text: strips tags and lets adjacent
-    /// text runs collapse naturally. Good enough for a search index — this
-    /// is never shown to the user, only matched against.
-    private static func stripHTML(_ html: String) -> String {
+    /// text runs collapse naturally. Good enough for a search index or for
+    /// feeding to speech synthesis — not meant for display.
+    static func stripHTML(_ html: String) -> String {
         var result = ""
         result.reserveCapacity(html.count)
         var inTag = false
