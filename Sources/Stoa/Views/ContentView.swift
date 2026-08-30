@@ -1107,7 +1107,13 @@ struct BookCoverTile: View {
             isHovered = hovering
         }
         .contentShape(Rectangle())
-        .gesture(
+        // highPriorityGesture, not gesture: the tile sits inside a
+        // NavigationLink (for single-click navigation to the detail
+        // view). A plain .gesture() loses the first tap of a double-click
+        // to the NavigationLink's own tap recognizer, so double-clicking
+        // to jump straight into the reader was unreliable — it would
+        // often just navigate to the detail view instead.
+        .highPriorityGesture(
             TapGesture(count: 2)
                 .onEnded { showReader = true }
         )
