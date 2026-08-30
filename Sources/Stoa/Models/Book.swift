@@ -15,6 +15,7 @@ final class Book: Hashable {
     var coverImagePath: String?
     var addedAt: Date
     var tags: [String]
+    var shelfNames: [String]
     var readingProgress: Double?   // 0.0...1.0, optional
     var contentHash: String        // SHA256 of file bytes, for dedup
     var sizeBytes: Int64
@@ -31,6 +32,7 @@ final class Book: Hashable {
         coverImagePath: String? = nil,
         addedAt: Date = Date(),
         tags: [String] = [],
+        shelfNames: [String] = [],
         readingProgress: Double? = nil,
         contentHash: String = "",
         sizeBytes: Int64 = 0,
@@ -46,6 +48,7 @@ final class Book: Hashable {
         self.coverImagePath = coverImagePath
         self.addedAt = addedAt
         self.tags = tags
+        self.shelfNames = shelfNames
         self.readingProgress = readingProgress
         self.contentHash = contentHash
         self.sizeBytes = sizeBytes

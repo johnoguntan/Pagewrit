@@ -246,6 +246,12 @@ final class LibraryStore: ObservableObject {
         try? modelContext.save()
     }
 
+    /// Update the shelves a specific book belongs to.
+    func updateShelves(for book: Book, shelves: [String]) {
+        book.shelfNames = shelves
+        try? modelContext.save()
+    }
+
     /// Update reading progress for a specific book.
     func updateProgress(for book: Book, progress: Double) {
         book.readingProgress = min(max(progress, 0), 1.0)

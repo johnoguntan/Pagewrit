@@ -121,6 +121,8 @@ struct ContentView: View {
             books = books.filter { $0.tags.contains(tag) }
         case .author(let name):
             books = books.filter { $0.author == name }
+        case .shelf(let shelf):
+            books = books.filter { $0.shelfNames.contains(shelf) }
         }
 
         guard !searchText.isEmpty else { return books }
@@ -136,6 +138,14 @@ struct ContentView: View {
     /// sidebar's TAGS section — only shown once at least one book has one.
     private var allTags: [String] {
         Set(library.books.flatMap(\.tags)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    /// Every distinct shelf across the library, alphabetically, for the
+    /// sidebar's SHELVES section — user-created groupings, same shape as
+    /// tags but meant for one-book-per-shelf-at-a-time organization
+    /// (a series, a to-read pile) rather than freeform labeling.
+    private var allShelves: [String] {
+        Set(library.books.flatMap(\.shelfNames)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     /// Every distinct author across the library, alphabetically, for the
@@ -354,6 +364,8 @@ struct ContentView: View {
             return "#\(tag)"
         case .author(let name):
             return name
+        case .shelf(let shelf):
+            return shelf
         }
     }
 
@@ -529,6 +541,7 @@ struct ContentView: View {
         case format(String)
         case tag(String)
         case author(String)
+        case shelf(String)
     }
 
     @State private var sidebarSelection: SidebarSelection? = .library
@@ -591,6 +604,14 @@ struct ContentView: View {
 
                     ForEach(allTags, id: \.self) { tag in
                         sidebarRow(title: tag, icon: "tag", selection: .tag(tag))
+                    }
+                }
+
+                if !allShelves.isEmpty {
+                    sidebarSectionLabel("SHELVES")
+
+                    ForEach(allShelves, id: \.self) { shelf in
+                        sidebarRow(title: shelf, icon: "books.vertical", selection: .shelf(shelf))
                     }
                 }
             }

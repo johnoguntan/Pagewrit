@@ -10,6 +10,7 @@ struct BookDetailView: View {
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.colorScheme) private var colorScheme
     @State private var newTagText = ""
+    @State private var newShelfText = ""
     @State private var showReader = false
     @State private var showDeleteConfirmation = false
     @State private var showMetadataLookup = false
@@ -88,6 +89,7 @@ struct BookDetailView: View {
             }
 
             tagSection
+            shelfSection
             buttonsRow
 
             Divider()
@@ -169,6 +171,87 @@ struct BookDetailView: View {
 
     private func removeTag(_ tag: String) {
         library.updateTags(for: book, tags: book.tags.filter { $0 != tag })
+    }
+
+    // MARK: - Shelves (real, from Book.shelfNames)
+    //
+    // Same shape as tags — a book can be on any number of shelves — but a
+    // distinct field and sidebar section so a user can browse "just what's
+    // on my Currently Reading shelf" without it mixing with freeform tags.
+
+    private var shelfSection: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.xs) {
+            HStack(spacing: DesignTokens.Detail.Tag.gap) {
+                ForEach(book.shelfNames, id: \.self) { shelf in
+                    shelfPill(shelf)
+                }
+            }
+
+            HStack(spacing: DesignTokens.Spacing.xs) {
+                TextField("Add to shelf\u{2026}", text: $newShelfText)
+                    .textFieldStyle(.plain)
+                    .font(DesignTokens.sansFont(
+                        size: DesignTokens.Detail.Tag.fontSize,
+                        weight: .medium
+                    ))
+                    .frame(maxWidth: 100)
+                    .onSubmit {
+                        addShelf()
+                    }
+
+                if !newShelfText.isEmpty {
+                    Button {
+                        addShelf()
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 16))
+                            .foregroundStyle(DesignTokens.accent)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func shelfPill(_ shelf: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "books.vertical")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            Text(shelf)
+                .font(DesignTokens.sansFont(
+                    size: DesignTokens.Detail.Tag.fontSize,
+                    weight: .semibold
+                ))
+                .foregroundStyle(.secondary)
+
+            Button {
+                removeShelf(shelf)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, DesignTokens.Detail.Tag.paddingV)
+        .padding(.horizontal, DesignTokens.Detail.Tag.paddingH)
+        .background(
+            Color.black.opacity(colorScheme == .dark ? 0.08 : 0.06),
+            in: Capsule()
+        )
+    }
+
+    private func addShelf() {
+        let trimmed = newShelfText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !book.shelfNames.contains(trimmed) else { return }
+        library.updateShelves(for: book, shelves: book.shelfNames + [trimmed])
+        newShelfText = ""
+    }
+
+    private func removeShelf(_ shelf: String) {
+        library.updateShelves(for: book, shelves: book.shelfNames.filter { $0 != shelf })
     }
 
     // MARK: - Buttons
