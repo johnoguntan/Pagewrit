@@ -1,24 +1,89 @@
 import SwiftUI
 
-/// "Get Books" sheet — search and download free, public-domain titles from
-/// Project Gutenberg straight into the library. Debounces as you type,
-/// shows per-row download state, and posts .stoaBooksDownloaded so
-/// ContentView rescans once a file lands on disk.
+/// "Get Books" sheet — search and download free, openly-downloadable
+/// titles from Project Gutenberg or the Internet Archive straight into
+/// the library. Debounces as you type, shows per-row download state, and
+/// posts .stoaBooksDownloaded so ContentView rescans once a file lands
+/// on disk.
 struct DownloadBooksView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
 
+    @State private var source: BookSource = .gutenberg
     @State private var query = ""
-    @State private var results: [GutenbergService.SearchResult] = []
+    @State private var results: [UnifiedResult] = []
     @State private var isSearching = false
     @State private var searchError: String?
-    @State private var downloadStates: [Int: DownloadState] = [:]
+    @State private var downloadStates: [String: DownloadState] = [:]
     @State private var searchTask: Task<Void, Never>?
+
+    enum BookSource: String, CaseIterable, Identifiable {
+        case gutenberg = "Gutenberg"
+        case internetArchive = "Internet Archive"
+
+        var id: String { rawValue }
+
+        var subtitle: String {
+            switch self {
+            case .gutenberg:
+                "Free, public-domain titles from Project Gutenberg"
+            case .internetArchive:
+                "Open scans from Internet Archive \u{2014} lending-only items are filtered out"
+            }
+        }
+    }
+
+    /// One search hit from either source, flattened to what the row UI
+    /// actually needs. Kept as a thin wrapper rather than two parallel
+    /// result lists so the rest of the view doesn't need to branch on
+    /// source at all.
+    struct UnifiedResult: Identifiable {
+        enum Backing {
+            case gutenberg(GutenbergService.SearchResult)
+            case internetArchive(InternetArchiveService.SearchResult)
+        }
+
+        let backing: Backing
+
+        var id: String {
+            switch backing {
+            case .gutenberg(let result): "gutenberg-\(result.id)"
+            case .internetArchive(let result): "ia-\(result.id)"
+            }
+        }
+
+        var title: String {
+            switch backing {
+            case .gutenberg(let result): result.title
+            case .internetArchive(let result): result.title
+            }
+        }
+
+        var authorNames: String {
+            switch backing {
+            case .gutenberg(let result): result.authorNames
+            case .internetArchive(let result): result.authorNames
+            }
+        }
+
+        /// Gutendex tells us up front whether a book has an EPUB at all.
+        /// Internet Archive's search index carries no such signal — every
+        /// IA hit shows a "Get" button, and whether it's actually open is
+        /// only known once the user taps it and the real metadata comes
+        /// back (see InternetArchiveService.resolveDownload).
+        var knownUnavailable: Bool {
+            switch backing {
+            case .gutenberg(let result): result.epubURL == nil
+            case .internetArchive: false
+            }
+        }
+    }
 
     enum DownloadState: Equatable {
         case downloading
         case done
         case failed
+        case unavailable(String)
     }
 
     var body: some View {
@@ -27,7 +92,7 @@ struct DownloadBooksView: View {
             Divider().overlay(DesignTokens.hairline(colorScheme: colorScheme))
             content
         }
-        .frame(width: 520, height: 560)
+        .frame(width: 520, height: 600)
         .background(DesignTokens.background)
     }
 
@@ -40,7 +105,7 @@ struct DownloadBooksView: View {
                     Text("Get Books")
                         .font(DesignTokens.serifFont(size: 20, weight: .semibold))
                         .foregroundStyle(.primary)
-                    Text("Free, public-domain titles from Project Gutenberg")
+                    Text(source.subtitle)
                         .font(DesignTokens.sansFont(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -56,6 +121,14 @@ struct DownloadBooksView: View {
                 }
                 .buttonStyle(TactileButtonStyle())
             }
+
+            Picker("Source", selection: $source) {
+                ForEach(BookSource.allCases) { candidate in
+                    Text(candidate.rawValue).tag(candidate)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
 
             HStack(spacing: DesignTokens.Spacing.xs) {
                 Image(systemName: "magnifyingglass")
@@ -90,6 +163,14 @@ struct DownloadBooksView: View {
                 await performSearch(trimmed)
             }
         }
+        .onChange(of: source) { _, _ in
+            results = []
+            downloadStates = [:]
+            searchError = nil
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            search(trimmed)
+        }
     }
 
     // MARK: - Content
@@ -102,7 +183,12 @@ struct DownloadBooksView: View {
         } else if let searchError {
             emptyState(icon: "exclamationmark.triangle", text: searchError)
         } else if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            emptyState(icon: "text.book.closed", text: "Search Project Gutenberg's 70,000+ free ebooks.")
+            emptyState(
+                icon: "text.book.closed",
+                text: source == .gutenberg
+                    ? "Search Project Gutenberg's 70,000+ free ebooks."
+                    : "Search millions of scanned texts on the Internet Archive."
+            )
         } else if results.isEmpty {
             emptyState(icon: "book.closed", text: "No results for \u{201c}\(query)\u{201d}.")
         } else {
@@ -134,7 +220,7 @@ struct DownloadBooksView: View {
 
     // MARK: - Result Row
 
-    private func resultRow(_ result: GutenbergService.SearchResult) -> some View {
+    private func resultRow(_ result: UnifiedResult) -> some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(result.title)
@@ -156,7 +242,7 @@ struct DownloadBooksView: View {
     }
 
     @ViewBuilder
-    private func downloadControl(for result: GutenbergService.SearchResult) -> some View {
+    private func downloadControl(for result: UnifiedResult) -> some View {
         switch downloadStates[result.id] {
         case .downloading:
             ProgressView()
@@ -175,8 +261,18 @@ struct DownloadBooksView: View {
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(TactileButtonStyle())
+        case .unavailable(let reason):
+            Text(reason)
+                .font(DesignTokens.sansFont(size: 11))
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.trailing)
+                .frame(maxWidth: 110)
         case nil:
-            if result.epubURL != nil {
+            if result.knownUnavailable {
+                Text("No EPUB")
+                    .font(DesignTokens.sansFont(size: 11))
+                    .foregroundStyle(.tertiary)
+            } else {
                 Button {
                     startDownload(result)
                 } label: {
@@ -188,10 +284,6 @@ struct DownloadBooksView: View {
                         .background(DesignTokens.accent, in: Capsule())
                 }
                 .buttonStyle(TactileButtonStyle())
-            } else {
-                Text("No EPUB")
-                    .font(DesignTokens.sansFont(size: 11))
-                    .foregroundStyle(.tertiary)
             }
         }
     }
@@ -203,13 +295,20 @@ struct DownloadBooksView: View {
         isSearching = true
         searchError = nil
         do {
-            let found = try await GutenbergService.search(query: trimmed)
-            guard !Task.isCancelled else { return }
-            results = found
+            switch source {
+            case .gutenberg:
+                let found = try await GutenbergService.search(query: trimmed)
+                guard !Task.isCancelled else { return }
+                results = found.map { UnifiedResult(backing: .gutenberg($0)) }
+            case .internetArchive:
+                let found = try await InternetArchiveService.search(query: trimmed)
+                guard !Task.isCancelled else { return }
+                results = found.map { UnifiedResult(backing: .internetArchive($0)) }
+            }
             isSearching = false
         } catch {
             guard !Task.isCancelled else { return }
-            searchError = "Couldn't reach Project Gutenberg. Check your connection and try again."
+            searchError = "Couldn't reach \(source.rawValue). Check your connection and try again."
             isSearching = false
         }
     }
@@ -223,16 +322,20 @@ struct DownloadBooksView: View {
 
     // MARK: - Download
 
-    private func startDownload(_ result: GutenbergService.SearchResult) {
+    private func startDownload(_ result: UnifiedResult) {
         downloadStates[result.id] = .downloading
         Task {
             do {
-                let fileURL = try await GutenbergService.download(result)
+                switch result.backing {
+                case .gutenberg(let source):
+                    try await GutenbergService.download(source)
+                case .internetArchive(let source):
+                    try await InternetArchiveService.download(source)
+                }
                 downloadStates[result.id] = .done
-                // Carries the downloaded file's URL so ContentView can
-                // import just this one file instead of rescanning every
-                // watched folder for one new arrival.
-                NotificationCenter.default.post(name: .stoaBooksDownloaded, object: fileURL)
+                NotificationCenter.default.post(name: .stoaBooksDownloaded, object: nil)
+            } catch InternetArchiveService.ServiceError.noOpenFileAvailable {
+                downloadStates[result.id] = .unavailable("Lending only \u{2014} not downloadable")
             } catch {
                 downloadStates[result.id] = .failed
             }
