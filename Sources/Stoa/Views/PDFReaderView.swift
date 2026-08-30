@@ -160,6 +160,16 @@ private struct PDFKitRepresentedView: NSViewRepresentable {
             self.parent = parent
         }
 
+        // NotificationCenter.addObserver(_:selector:name:object:) retains
+        // its target — without this, every PDF opened leaves its
+        // Coordinator (and the PDFView it references) alive forever, and
+        // .PDFViewPageChanged keeps firing into a reader that's long since
+        // been dismissed. dismantleNSView (below) is the NSViewRepresentable
+        // hook for exactly this kind of teardown.
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+
         @objc func pageChanged() {
             guard let pdfView, let page = pdfView.currentPage,
                   let document = pdfView.document else { return }
@@ -167,5 +177,9 @@ private struct PDFKitRepresentedView: NSViewRepresentable {
             guard index != NSNotFound else { return }
             parent.currentPageIndex = index
         }
+    }
+
+    static func dismantleNSView(_ nsView: PDFView, coordinator: Coordinator) {
+        NotificationCenter.default.removeObserver(coordinator, name: .PDFViewPageChanged, object: nsView)
     }
 }

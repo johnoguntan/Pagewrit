@@ -198,7 +198,13 @@ struct SettingsView: View {
 
     private var rescanButton: some View {
         Button {
-            Task { await scanner.scan() }
+            // Posts to ContentView rather than calling scanner.scan()
+            // directly — scan() alone only refreshes the discovered-file
+            // list, it never hashes/classifies/imports anything, so a
+            // rescan triggered from here used to silently do nothing
+            // useful: the file list would update but no new books would
+            // ever reach the library grid.
+            NotificationCenter.default.post(name: .stoaRequestFullRescan, object: nil)
         } label: {
             HStack(spacing: 5) {
                 if scanner.isScanning {
@@ -242,7 +248,7 @@ struct SettingsView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             scanner.addFolder(url)
-            Task { await scanner.scan() }
+            NotificationCenter.default.post(name: .stoaRequestFullRescan, object: nil)
         }
     }
 }

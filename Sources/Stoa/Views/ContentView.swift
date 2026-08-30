@@ -268,6 +268,9 @@ struct ContentView: View {
                 Task { await rescanAndImport() }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .stoaRequestFullRescan)) { _ in
+            Task { await rescanAndImport() }
+        }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 densityMenu

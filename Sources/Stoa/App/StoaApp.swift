@@ -11,6 +11,14 @@ extension Notification.Name {
     /// just that one file (see importSingleFile) rather than rescanning
     /// every watched folder for it.
     static let stoaBooksDownloaded = Notification.Name("stoaBooksDownloaded")
+
+    /// Posted when something outside ContentView (Settings' Rescan button,
+    /// or adding a new watched folder) wants a full rescan + import —
+    /// ScannerService.scan() alone only refreshes the discovered-file list,
+    /// it doesn't hash/classify/import anything into the library, so
+    /// Settings needs a way to trigger the real pipeline that ContentView
+    /// owns rather than duplicating it.
+    static let stoaRequestFullRescan = Notification.Name("stoaRequestFullRescan")
 }
 
 /// Routes a Spotlight tap back into the running app. NSApplicationDelegate
