@@ -1288,10 +1288,10 @@ struct MattedCoverView: View {
 
     var body: some View {
         ZStack {
-            if book.format == .pdf {
-                mattedPDF
-            } else if let coverURL = book.coverImageURL {
+            if let coverURL = book.coverImageURL {
                 fullBleedCover(url: coverURL)
+            } else if book.format == .pdf {
+                mattedPDF
             } else {
                 fullBleedPlaceholder
             }

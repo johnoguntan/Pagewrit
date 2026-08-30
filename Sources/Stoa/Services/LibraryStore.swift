@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Combine
+import AppKit
 
 /// Owns the SwiftData ModelContainer and exposes the library as a
 /// publishable array of `Book` records. This is the single source of
@@ -258,6 +259,46 @@ final class LibraryStore: ObservableObject {
     func markOpened(_ book: Book) {
         book.lastOpenedAt = Date()
         try? modelContext.save()
+    }
+
+    /// Apply a chosen Open Library match to a book: replace title/author,
+    /// and — if cover art came back with it — save it into StoaLibrary's
+    /// Covers folder and point the book at it. Any of the three can be nil
+    /// (a lookup with no cover art still lets the user fix just the title).
+    func applyMetadata(to book: Book, title: String?, author: String?, coverData: Data?) {
+        if let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            book.title = title
+        }
+        if let author, !author.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            book.author = author
+        }
+        if let coverData, let savedPath = saveCoverImage(coverData, contentHash: book.contentHash) {
+            book.coverImagePath = savedPath
+        }
+        try? modelContext.save()
+    }
+
+    /// Save raw cover image data to StoaLibrary/Covers/<hash>.jpg — mirrors
+    /// ImportPipeline's own saveCoverImage, since a metadata-lookup cover
+    /// needs the same on-disk convention as one found at import time.
+    private func saveCoverImage(_ data: Data, contentHash: String) -> String? {
+        let coversDir = libraryFolder.appendingPathComponent("Covers", isDirectory: true)
+        let fileURL = coversDir.appendingPathComponent("\(contentHash).jpg")
+
+        do {
+            guard let nsImage = NSImage(data: data),
+                  let tiffData = nsImage.tiffRepresentation,
+                  let bitmapRep = NSBitmapImageRep(data: tiffData),
+                  let jpegData = bitmapRep.representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else {
+                try data.write(to: fileURL)
+                return fileURL.path
+            }
+            try jpegData.write(to: fileURL)
+            return fileURL.path
+        } catch {
+            print("LibraryStore: failed to save cover image: \(error)")
+            return nil
+        }
     }
 
     /// Books with progress in (0, 0.98), most recently opened first — the

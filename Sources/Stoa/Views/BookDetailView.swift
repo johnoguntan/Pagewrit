@@ -12,6 +12,7 @@ struct BookDetailView: View {
     @State private var newTagText = ""
     @State private var showReader = false
     @State private var showDeleteConfirmation = false
+    @State private var showMetadataLookup = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -26,6 +27,10 @@ struct BookDetailView: View {
         .navigationTitle(book.title)
         .sheet(isPresented: $showReader) {
             readerSheet
+        }
+        .sheet(isPresented: $showMetadataLookup) {
+            MetadataLookupView(book: book)
+                .environmentObject(library)
         }
         .confirmationDialog(
             "Delete \u{201c}\(book.title)\u{201d}?",
@@ -197,6 +202,25 @@ struct BookDetailView: View {
                 NSWorkspace.shared.activateFileViewerSelecting([book.sourceURL])
             } label: {
                 Label("Show in Finder", systemImage: "folder")
+                    .font(DesignTokens.sansFont(
+                        size: DesignTokens.Detail.SecondaryButton.fontSize
+                    ))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, DesignTokens.Detail.SecondaryButton.paddingV)
+                    .padding(.horizontal, DesignTokens.Detail.SecondaryButton.paddingH)
+                    .background(.clear)
+                    .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Detail.SecondaryButton.cornerRadius))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: DesignTokens.Detail.SecondaryButton.cornerRadius)
+                            .stroke(.separator, lineWidth: 1)
+                    )
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                showMetadataLookup = true
+            } label: {
+                Label("Fix Metadata", systemImage: "pencil.and.list.clipboard")
                     .font(DesignTokens.sansFont(
                         size: DesignTokens.Detail.SecondaryButton.fontSize
                     ))
