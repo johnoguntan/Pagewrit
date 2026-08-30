@@ -24,6 +24,8 @@ struct EPUBReaderView: View {
     @State private var currentChapterIndex: Int = 0
     @State private var isLoading = true
     @State private var loadFailed = false
+    @State private var tocEntries: [TOCEntry] = []
+    @State private var showTOC = false
     @AppStorage("stoa.epubFontScale") private var fontScale: Double = 1.0
     @StateObject private var speech = SpeechController()
 
@@ -78,6 +80,8 @@ struct EPUBReaderView: View {
                     .foregroundStyle(.secondary)
             }
 
+            tocButton
+
             fontSizeControls
 
             readAloudButton
@@ -99,6 +103,62 @@ struct EPUBReaderView: View {
                 .fill(DesignTokens.hairline(colorScheme: colorScheme))
                 .frame(height: 1)
         }
+    }
+
+    // MARK: - Table of Contents
+
+    private var tocButton: some View {
+        Button {
+            showTOC = true
+        } label: {
+            Image(systemName: "list.bullet")
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .disabled(tocEntries.isEmpty)
+        .help("Table of contents")
+        .padding(.trailing, DesignTokens.Spacing.xs)
+        .popover(isPresented: $showTOC, arrowEdge: .bottom) {
+            tocList
+        }
+    }
+
+    private var tocList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(tocEntries) { entry in
+                    Button {
+                        currentChapterIndex = entry.chapterIndex
+                        saveProgress()
+                        showTOC = false
+                    } label: {
+                        HStack {
+                            Text(entry.title)
+                                .font(DesignTokens.sansFont(
+                                    size: 13,
+                                    weight: entry.chapterIndex == currentChapterIndex ? .semibold : .regular
+                                ))
+                                .foregroundStyle(
+                                    entry.chapterIndex == currentChapterIndex
+                                        ? DesignTokens.accent
+                                        : Color.primary
+                                )
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.leading, DesignTokens.Spacing.sm + CGFloat(entry.depth) * 14)
+                        .padding(.trailing, DesignTokens.Spacing.sm)
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, DesignTokens.Spacing.xs)
+        }
+        .frame(width: 280, height: 360)
     }
 
     // MARK: - Font Size Controls
@@ -274,6 +334,7 @@ struct EPUBReaderView: View {
 
         chapterURLs = urls
         chapterTitles = titles
+        tocEntries = flattenTOC(epubDoc.tableOfContents, chapterURLs: urls)
         isLoading = false
 
         // Resume at saved chapter position
@@ -295,6 +356,46 @@ struct EPUBReaderView: View {
         let progress = Double(currentChapterIndex) / Double(chapterURLs.count - 1)
         library.updateProgress(for: book, progress: progress)
     }
+
+    // MARK: - Table of Contents Flattening
+    //
+    // EPUBKit's tableOfContents is a tree (NCX navMap) keyed by `item`, a
+    // src path that may carry a "#fragment" anchor. Stoa's reader only
+    // navigates at chapter granularity, so each entry is resolved down to
+    // the matching chapter's index by filename, ignoring any fragment —
+    // and dropped if it can't be matched to a real chapter document.
+    #if canImport(EPUBKit)
+    private func flattenTOC(
+        _ node: EPUBTableOfContents,
+        depth: Int = 0,
+        chapterURLs: [URL]
+    ) -> [TOCEntry] {
+        var entries: [TOCEntry] = []
+
+        let label = node.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !label.isEmpty, let itemPath = node.item {
+            let barePath = itemPath.components(separatedBy: "#").first ?? itemPath
+            let fileName = (barePath as NSString).lastPathComponent
+            if let index = chapterURLs.firstIndex(where: { $0.lastPathComponent == fileName }) {
+                entries.append(TOCEntry(title: label, depth: depth, chapterIndex: index))
+            }
+        }
+
+        for child in node.subTable ?? [] {
+            entries.append(contentsOf: flattenTOC(child, depth: depth + 1, chapterURLs: chapterURLs))
+        }
+
+        return entries
+    }
+    #endif
+}
+
+/// One flattened, navigable row in the EPUB's table of contents.
+struct TOCEntry: Identifiable {
+    let id = UUID()
+    let title: String
+    let depth: Int
+    let chapterIndex: Int
 }
 
 // MARK: - EPUBWebViewRepresented
