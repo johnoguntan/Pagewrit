@@ -11,7 +11,9 @@ import Foundation
 
 /// In-app EPUB reader. Renders one chapter at a time in a WKWebView,
 /// with forward/back chapter navigation and progress persisted back
-/// to the library store.
+/// to the library store. Also carries in-book search, bookmarks, and a
+/// reading theme (night/sepia), on top of the table of contents, font
+/// sizing, and read-aloud it already had.
 struct EPUBReaderView: View {
     let book: Book
     @EnvironmentObject private var library: LibraryStore
@@ -29,12 +31,27 @@ struct EPUBReaderView: View {
     @AppStorage("stoa.epubFontScale") private var fontScale: Double = 1.0
     @StateObject private var speech = SpeechController()
 
+    @State private var showBookmarks = false
+
+    @State private var showSearch = false
+    @State private var searchQuery = ""
+    @State private var searchResults: [EPUBSearchResult] = []
+    @State private var currentSearchIndex: Int = 0
+    @State private var pendingHighlightQuery: String?
+    @State private var chapterTextCache: [Int: String] = [:]
+
+    @AppStorage("stoa.readerTheme") private var readerThemeRaw: String = ReaderTheme.system.rawValue
+    private var readerTheme: ReaderTheme { ReaderTheme(rawValue: readerThemeRaw) ?? .system }
+
     private let fontScaleRange: ClosedRange<Double> = 0.75...2.0
     private let fontScaleStep: Double = 0.125
 
     var body: some View {
         VStack(spacing: 0) {
             header
+            if showSearch {
+                searchBar
+            }
 
             if loadFailed {
                 failureState
@@ -42,18 +59,21 @@ struct EPUBReaderView: View {
                 EPUBWebViewRepresented(
                     chapterURL: chapterURLs[currentChapterIndex],
                     contentDirectory: epub?.contentDirectory,
-                    fontScale: fontScale
+                    fontScale: fontScale,
+                    backgroundHex: readerTheme.epubBackgroundHex,
+                    textHex: readerTheme.epubTextHex,
+                    highlightQuery: pendingHighlightQuery
                 )
             } else {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(DesignTokens.background)
+                    .background(readerBackground)
             }
 
             footer
         }
         .frame(minWidth: 760, minHeight: 600)
-        .background(DesignTokens.background.ignoresSafeArea())
+        .background(readerBackground.ignoresSafeArea())
         .onAppear(perform: load)
         .onAppear { library.markOpened(book) }
         .onChange(of: currentChapterIndex) { _, _ in speech.stop() }
@@ -63,13 +83,17 @@ struct EPUBReaderView: View {
         .onKeyPress(.leftArrow) { advance(-1); return .handled }
     }
 
+    private var readerBackground: Color {
+        readerTheme.backgroundColor ?? DesignTokens.background
+    }
+
     // MARK: - Header
 
     private var header: some View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             Text(book.title)
                 .font(DesignTokens.serifFont(size: 15, weight: .semibold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(readerTheme.textColor ?? .primary)
                 .lineLimit(1)
 
             Spacer()
@@ -77,13 +101,14 @@ struct EPUBReaderView: View {
             if !chapterURLs.isEmpty {
                 Text("Chapter \(currentChapterIndex + 1) of \(chapterURLs.count)")
                     .font(DesignTokens.sansFont(size: 12))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(readerTheme.secondaryTextColor ?? .secondary)
             }
 
             tocButton
-
+            searchButton
+            bookmarkButton
             fontSizeControls
-
+            themeMenu
             readAloudButton
 
             Button {
@@ -91,13 +116,13 @@ struct EPUBReaderView: View {
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 18))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(readerTheme.secondaryTextColor ?? .secondary)
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, DesignTokens.Spacing.md)
         .padding(.vertical, DesignTokens.Spacing.sm)
-        .background(DesignTokens.surface)
+        .background(readerTheme.chromeColor ?? DesignTokens.surface)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(DesignTokens.hairline(colorScheme: colorScheme))
@@ -113,7 +138,7 @@ struct EPUBReaderView: View {
         } label: {
             Image(systemName: "list.bullet")
                 .font(.system(size: 13))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(readerTheme.secondaryTextColor ?? .secondary)
         }
         .buttonStyle(.plain)
         .disabled(tocEntries.isEmpty)
@@ -161,6 +186,261 @@ struct EPUBReaderView: View {
         .frame(width: 280, height: 360)
     }
 
+    // MARK: - Bookmarks
+
+    private var isCurrentChapterBookmarked: Bool {
+        guard chapterURLs.count > 0 else { return false }
+        let position = Double(currentChapterIndex) / Double(max(chapterURLs.count - 1, 1))
+        return library.bookmarks(for: book).contains {
+            abs($0.position - position) < (1.0 / Double(max(chapterURLs.count, 1))) / 2
+        }
+    }
+
+    private var bookmarkButton: some View {
+        Button {
+            if let existing = library.bookmarks(for: book).first(where: { bookmark in
+                guard !chapterURLs.isEmpty else { return false }
+                let position = Double(currentChapterIndex) / Double(max(chapterURLs.count - 1, 1))
+                return abs(bookmark.position - position) < (1.0 / Double(max(chapterURLs.count, 1))) / 2
+            }) {
+                library.removeBookmark(existing)
+            } else {
+                showBookmarks = true
+            }
+        } label: {
+            Image(systemName: isCurrentChapterBookmarked ? "bookmark.fill" : "bookmark")
+                .font(.system(size: 13))
+                .foregroundStyle(isCurrentChapterBookmarked ? DesignTokens.accent : (readerTheme.secondaryTextColor ?? .secondary))
+        }
+        .buttonStyle(.plain)
+        .disabled(chapterURLs.isEmpty)
+        .help(isCurrentChapterBookmarked ? "Remove bookmark" : "Bookmark this chapter \u{2014} or hold to browse bookmarks")
+        .contextMenu {
+            Button("Browse Bookmarks") { showBookmarks = true }
+        }
+        .padding(.trailing, DesignTokens.Spacing.xs)
+        .popover(isPresented: $showBookmarks, arrowEdge: .bottom) {
+            bookmarksPopover
+        }
+    }
+
+    private var bookmarksPopover: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Bookmarks")
+                    .font(DesignTokens.sansFont(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    addBookmarkHere()
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(DesignTokens.accent)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, DesignTokens.Spacing.sm)
+            .padding(.top, DesignTokens.Spacing.sm)
+            .padding(.bottom, DesignTokens.Spacing.xs)
+
+            let saved = library.bookmarks(for: book)
+            if saved.isEmpty {
+                Text("No bookmarks yet")
+                    .font(DesignTokens.sansFont(size: 12))
+                    .foregroundStyle(.tertiary)
+                    .padding(DesignTokens.Spacing.sm)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(saved, id: \.persistentModelID) { bookmark in
+                            HStack {
+                                Button {
+                                    let index = Int((bookmark.position * Double(max(chapterURLs.count - 1, 1))).rounded())
+                                    currentChapterIndex = min(max(index, 0), max(chapterURLs.count - 1, 0))
+                                    saveProgress()
+                                    showBookmarks = false
+                                } label: {
+                                    Text(bookmark.label)
+                                        .font(DesignTokens.sansFont(size: 13))
+                                        .foregroundStyle(.primary)
+                                }
+                                .buttonStyle(.plain)
+
+                                Spacer()
+
+                                Button {
+                                    library.removeBookmark(bookmark)
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, DesignTokens.Spacing.sm)
+                            .padding(.vertical, 6)
+                        }
+                    }
+                }
+                .frame(maxHeight: 220)
+            }
+        }
+        .frame(width: 240)
+        .padding(.bottom, DesignTokens.Spacing.xs)
+    }
+
+    private func addBookmarkHere() {
+        guard !chapterURLs.isEmpty else { return }
+        let position = Double(currentChapterIndex) / Double(max(chapterURLs.count - 1, 1))
+        let label = chapterTitles.indices.contains(currentChapterIndex)
+            ? chapterTitles[currentChapterIndex]
+            : "Chapter \(currentChapterIndex + 1)"
+        library.addBookmark(for: book, position: position, label: label)
+    }
+
+    // MARK: - Search
+    //
+    // Searches every chapter's plain text (stripped HTML, cached per
+    // chapter once extracted) rather than only the one currently on
+    // screen \u{2014} a reader looking something up usually doesn't know which
+    // chapter it's in. Jumping to a result loads that chapter, then hands
+    // the query down to the WKWebView so it can run the browser's own
+    // `window.find` to scroll to and highlight the first match.
+
+    private var searchButton: some View {
+        Button {
+            showSearch.toggle()
+            if !showSearch { clearSearch() }
+        } label: {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13))
+                .foregroundStyle(showSearch ? DesignTokens.accent : (readerTheme.secondaryTextColor ?? .secondary))
+        }
+        .buttonStyle(.plain)
+        .disabled(chapterURLs.isEmpty)
+        .help("Search this book")
+        .padding(.trailing, DesignTokens.Spacing.xs)
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: DesignTokens.Spacing.xs) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            TextField("Search this book\u{2026}", text: $searchQuery)
+                .textFieldStyle(.plain)
+                .font(DesignTokens.sansFont(size: 13))
+                .onSubmit { runSearch() }
+
+            if !searchResults.isEmpty {
+                Text("\(currentSearchIndex + 1) of \(searchResults.count)")
+                    .font(DesignTokens.sansFont(size: 11))
+                    .foregroundStyle(.tertiary)
+
+                Button {
+                    stepSearch(-1)
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    stepSearch(1)
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+            } else if !searchQuery.isEmpty && !isLoading {
+                Text("No results")
+                    .font(DesignTokens.sansFont(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+
+            Button {
+                showSearch = false
+                clearSearch()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, DesignTokens.Spacing.md)
+        .padding(.vertical, 7)
+        .background(DesignTokens.surface)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(DesignTokens.hairline(colorScheme: colorScheme))
+                .frame(height: 1)
+        }
+    }
+
+    private func runSearch() {
+        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else {
+            clearSearch()
+            return
+        }
+
+        var results: [EPUBSearchResult] = []
+        for index in chapterURLs.indices {
+            let text = cachedChapterText(at: index)
+            guard let range = text.range(of: trimmed, options: .caseInsensitive) else { continue }
+            let snippetStart = text.index(range.lowerBound, offsetBy: -40, limitedBy: text.startIndex) ?? text.startIndex
+            let snippetEnd = text.index(range.upperBound, offsetBy: 40, limitedBy: text.endIndex) ?? text.endIndex
+            let snippet = text[snippetStart..<snippetEnd].trimmingCharacters(in: .whitespacesAndNewlines)
+            results.append(EPUBSearchResult(chapterIndex: index, snippet: snippet))
+        }
+
+        searchResults = results
+        currentSearchIndex = 0
+        jumpToCurrentSearchResult()
+    }
+
+    private func cachedChapterText(at index: Int) -> String {
+        if let cached = chapterTextCache[index] { return cached }
+        guard chapterURLs.indices.contains(index),
+              let html = try? String(contentsOf: chapterURLs[index], encoding: .utf8) else {
+            return ""
+        }
+        let stripped = TextExtractor.stripHTML(html)
+        chapterTextCache[index] = stripped
+        return stripped
+    }
+
+    private func clearSearch() {
+        searchResults = []
+        currentSearchIndex = 0
+        pendingHighlightQuery = nil
+    }
+
+    private func stepSearch(_ delta: Int) {
+        guard !searchResults.isEmpty else { return }
+        currentSearchIndex = (currentSearchIndex + delta + searchResults.count) % searchResults.count
+        jumpToCurrentSearchResult()
+    }
+
+    private func jumpToCurrentSearchResult() {
+        guard searchResults.indices.contains(currentSearchIndex) else { return }
+        let result = searchResults[currentSearchIndex]
+        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if currentChapterIndex == result.chapterIndex {
+            // Same chapter already loaded \u{2014} bump the query so the
+            // representable's onChange re-runs window.find even though
+            // chapterURL itself didn't change.
+            pendingHighlightQuery = nil
+            DispatchQueue.main.async { pendingHighlightQuery = trimmed }
+        } else {
+            currentChapterIndex = result.chapterIndex
+            pendingHighlightQuery = trimmed
+            saveProgress()
+        }
+    }
+
     // MARK: - Font Size Controls
 
     private var fontSizeControls: some View {
@@ -172,7 +452,7 @@ struct EPUBReaderView: View {
                     .font(.system(size: 12))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(readerTheme.secondaryTextColor ?? .secondary)
             .disabled(fontScale <= fontScaleRange.lowerBound)
             .help("Smaller text")
 
@@ -183,10 +463,36 @@ struct EPUBReaderView: View {
                     .font(.system(size: 12))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(readerTheme.secondaryTextColor ?? .secondary)
             .disabled(fontScale >= fontScaleRange.upperBound)
             .help("Larger text")
         }
+        .padding(.trailing, DesignTokens.Spacing.xs)
+    }
+
+    // MARK: - Theme
+
+    private var themeMenu: some View {
+        Menu {
+            ForEach(ReaderTheme.allCases) { theme in
+                Button {
+                    readerThemeRaw = theme.rawValue
+                } label: {
+                    if theme == readerTheme {
+                        Label(theme.label, systemImage: "checkmark")
+                    } else {
+                        Text(theme.label)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: readerTheme.icon)
+                .font(.system(size: 13))
+                .foregroundStyle(readerTheme.secondaryTextColor ?? .secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Reading theme")
         .padding(.trailing, DesignTokens.Spacing.xs)
     }
 
@@ -202,7 +508,7 @@ struct EPUBReaderView: View {
         } label: {
             Image(systemName: speech.isSpeaking ? "speaker.wave.2.fill" : "speaker.wave.2")
                 .font(.system(size: 13))
-                .foregroundStyle(speech.isSpeaking ? DesignTokens.accent : .secondary)
+                .foregroundStyle(speech.isSpeaking ? DesignTokens.accent : (readerTheme.secondaryTextColor ?? .secondary))
         }
         .buttonStyle(.plain)
         .disabled(chapterURLs.isEmpty)
@@ -212,9 +518,7 @@ struct EPUBReaderView: View {
 
     private func speakCurrentChapter() {
         guard chapterURLs.indices.contains(currentChapterIndex) else { return }
-        let url = chapterURLs[currentChapterIndex]
-        guard let html = try? String(contentsOf: url, encoding: .utf8) else { return }
-        speech.speak(TextExtractor.stripHTML(html))
+        speech.speak(cachedChapterText(at: currentChapterIndex))
     }
 
     // MARK: - Footer
@@ -256,7 +560,7 @@ struct EPUBReaderView: View {
         }
         .padding(.horizontal, DesignTokens.Spacing.md)
         .padding(.vertical, DesignTokens.Spacing.sm)
-        .background(DesignTokens.surface)
+        .background(readerTheme.chromeColor ?? DesignTokens.surface)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(DesignTokens.hairline(colorScheme: colorScheme))
@@ -289,6 +593,7 @@ struct EPUBReaderView: View {
         let newIndex = currentChapterIndex + delta
         guard chapterURLs.indices.contains(newIndex) else { return }
         currentChapterIndex = newIndex
+        pendingHighlightQuery = nil
         saveProgress()
     }
 
@@ -362,7 +667,7 @@ struct EPUBReaderView: View {
     // EPUBKit's tableOfContents is a tree (NCX navMap) keyed by `item`, a
     // src path that may carry a "#fragment" anchor. Stoa's reader only
     // navigates at chapter granularity, so each entry is resolved down to
-    // the matching chapter's index by filename, ignoring any fragment —
+    // the matching chapter's index by filename, ignoring any fragment \u{2014}
     // and dropped if it can't be matched to a real chapter document.
     #if canImport(EPUBKit)
     private func flattenTOC(
@@ -398,6 +703,15 @@ struct TOCEntry: Identifiable {
     let chapterIndex: Int
 }
 
+/// One search hit \u{2014} which chapter it's in, plus a short snippet of
+/// surrounding text so the results list is scannable without opening
+/// every chapter.
+struct EPUBSearchResult: Identifiable {
+    let id = UUID()
+    let chapterIndex: Int
+    let snippet: String
+}
+
 // MARK: - EPUBWebViewRepresented
 
 /// NSViewRepresentable bridge to WKWebView for rendering EPUB chapter HTML.
@@ -406,6 +720,9 @@ private struct EPUBWebViewRepresented: NSViewRepresentable {
     let chapterURL: URL
     let contentDirectory: URL?
     var fontScale: Double = 1.0
+    var backgroundHex: String?
+    var textHex: String?
+    var highlightQuery: String?
 
     func makeNSView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
@@ -416,35 +733,65 @@ private struct EPUBWebViewRepresented: NSViewRepresentable {
 
     func updateNSView(_ webView: WKWebView, context: Context) {
         context.coordinator.fontScale = fontScale
+        context.coordinator.backgroundHex = backgroundHex
+        context.coordinator.textHex = textHex
 
         guard context.coordinator.lastLoadedURL != chapterURL else {
-            // Same chapter — just re-apply the font size if it changed.
-            context.coordinator.applyFontScale(to: webView)
+            // Same chapter \u{2014} just re-apply style, and re-run a search
+            // highlight if one was requested for the chapter already on
+            // screen (the query changing doesn't reload the page).
+            context.coordinator.applyStyle(to: webView)
+            if let highlightQuery, highlightQuery != context.coordinator.lastHighlightQuery {
+                context.coordinator.lastHighlightQuery = highlightQuery
+                context.coordinator.highlight(query: highlightQuery, in: webView)
+            }
             return
         }
         context.coordinator.lastLoadedURL = chapterURL
+        context.coordinator.pendingHighlightQuery = highlightQuery
+        context.coordinator.lastHighlightQuery = highlightQuery
         let readAccessTo = contentDirectory ?? chapterURL.deletingLastPathComponent()
         webView.loadFileURL(chapterURL, allowingReadAccessTo: readAccessTo)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    /// Applies the user's chosen font scale by injecting a <style> override
-    /// after each page load, and re-injecting (without reloading) whenever
-    /// the scale changes on the same chapter — a full page reload would
-    /// lose scroll position for no reason.
+    /// Applies the user's chosen font scale and reading theme by injecting
+    /// a <style> override after each page load, re-injecting (without
+    /// reloading) whenever either changes on the same chapter \u{2014} a full
+    /// page reload would lose scroll position for no reason. Also runs a
+    /// pending search highlight once the page has actually finished
+    /// loading.
     final class Coordinator: NSObject, WKNavigationDelegate {
         var lastLoadedURL: URL?
         var fontScale: Double = 1.0
+        var backgroundHex: String?
+        var textHex: String?
+        var pendingHighlightQuery: String?
+        var lastHighlightQuery: String?
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            applyFontScale(to: webView)
+            applyStyle(to: webView)
+            if let query = pendingHighlightQuery {
+                pendingHighlightQuery = nil
+                highlight(query: query, in: webView)
+            }
         }
 
-        func applyFontScale(to webView: WKWebView) {
+        func applyStyle(to webView: WKWebView) {
             let pixelSize = Int((17.0 * fontScale).rounded())
-            let css = "html, body, p, div, span, li, td { font-size: \(pixelSize)px !important; line-height: 1.6 !important; }"
-            let js = "(function(){var s=document.getElementById('stoa-font-override');if(!s){s=document.createElement('style');s.id='stoa-font-override';document.head.appendChild(s);}s.textContent=\(css.debugDescription);})();"
+            var css = "html, body, p, div, span, li, td { font-size: \(pixelSize)px !important; line-height: 1.6 !important; }"
+            if let backgroundHex, let textHex {
+                css += " html, body { background-color: \(backgroundHex) !important; color: \(textHex) !important; }"
+                css += " a { color: \(textHex) !important; }"
+            }
+            let js = "(function(){var s=document.getElementById('stoa-style-override');if(!s){s=document.createElement('style');s.id='stoa-style-override';document.head.appendChild(s);}s.textContent=\(css.debugDescription);})();"
+            webView.evaluateJavaScript(js, completionHandler: nil)
+        }
+
+        func highlight(query: String, in webView: WKWebView) {
+            guard !query.isEmpty else { return }
+            let js = "window.find(\(query.debugDescription), false, false, true, false, true, false);"
             webView.evaluateJavaScript(js, completionHandler: nil)
         }
     }

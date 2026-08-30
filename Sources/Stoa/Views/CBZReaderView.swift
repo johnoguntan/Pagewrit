@@ -31,6 +31,7 @@ struct CBZReaderView: View {
     /// per-book toggle would mean a schema migration on Book for a
     /// preference most libraries only need in one direction anyway.
     @AppStorage("stoa.cbzRightToLeft") private var rightToLeft = false
+    @State private var showBookmarks = false
 
     private let extractionQueue = DispatchQueue(label: "com.sam.stoa.cbz-extraction")
 
@@ -102,6 +103,8 @@ struct CBZReaderView: View {
             }
             .buttonStyle(.plain)
             .help("Reading direction \u{2014} switch for manga/right-to-left comics")
+
+            bookmarkButton
 
             Button {
                 dismiss()
@@ -224,6 +227,114 @@ struct CBZReaderView: View {
         let newIndex = currentPageIndex + delta
         guard pagePaths.indices.contains(newIndex) else { return }
         currentPageIndex = newIndex
+    }
+
+    // MARK: - Bookmarks
+
+    private var isCurrentPageBookmarked: Bool {
+        guard pagePaths.count > 0 else { return false }
+        let position = Double(currentPageIndex) / Double(max(pagePaths.count - 1, 1))
+        return library.bookmarks(for: book).contains {
+            abs($0.position - position) < (1.0 / Double(max(pagePaths.count, 1))) / 2
+        }
+    }
+
+    private var bookmarkButton: some View {
+        Button {
+            if let existing = library.bookmarks(for: book).first(where: { bookmark in
+                guard pagePaths.count > 0 else { return false }
+                let position = Double(currentPageIndex) / Double(max(pagePaths.count - 1, 1))
+                return abs(bookmark.position - position) < (1.0 / Double(max(pagePaths.count, 1))) / 2
+            }) {
+                library.removeBookmark(existing)
+            } else {
+                showBookmarks = true
+            }
+        } label: {
+            Image(systemName: isCurrentPageBookmarked ? "bookmark.fill" : "bookmark")
+                .font(.system(size: 13))
+                .foregroundStyle(isCurrentPageBookmarked ? DesignTokens.accent : .secondary)
+        }
+        .buttonStyle(.plain)
+        .disabled(pagePaths.isEmpty)
+        .help(isCurrentPageBookmarked ? "Remove bookmark" : "Bookmark this page \u{2014} or hold to browse bookmarks")
+        .contextMenu {
+            Button("Browse Bookmarks") { showBookmarks = true }
+        }
+        .popover(isPresented: $showBookmarks, arrowEdge: .bottom) {
+            bookmarksPopover
+        }
+    }
+
+    private var bookmarksPopover: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Bookmarks")
+                    .font(DesignTokens.sansFont(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    addBookmarkHere()
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(DesignTokens.accent)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, DesignTokens.Spacing.sm)
+            .padding(.top, DesignTokens.Spacing.sm)
+            .padding(.bottom, DesignTokens.Spacing.xs)
+
+            let saved = library.bookmarks(for: book)
+            if saved.isEmpty {
+                Text("No bookmarks yet")
+                    .font(DesignTokens.sansFont(size: 12))
+                    .foregroundStyle(.tertiary)
+                    .padding(DesignTokens.Spacing.sm)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(saved, id: \.persistentModelID) { bookmark in
+                            HStack {
+                                Button {
+                                    let index = Int((bookmark.position * Double(max(pagePaths.count - 1, 1))).rounded())
+                                    currentPageIndex = min(max(index, 0), max(pagePaths.count - 1, 0))
+                                    showBookmarks = false
+                                } label: {
+                                    Text(bookmark.label)
+                                        .font(DesignTokens.sansFont(size: 13))
+                                        .foregroundStyle(.primary)
+                                }
+                                .buttonStyle(.plain)
+
+                                Spacer()
+
+                                Button {
+                                    library.removeBookmark(bookmark)
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, DesignTokens.Spacing.sm)
+                            .padding(.vertical, 6)
+                        }
+                    }
+                }
+                .frame(maxHeight: 220)
+            }
+        }
+        .frame(width: 240)
+        .padding(.bottom, DesignTokens.Spacing.xs)
+    }
+
+    private func addBookmarkHere() {
+        guard pagePaths.count > 0 else { return }
+        let position = Double(currentPageIndex) / Double(max(pagePaths.count - 1, 1))
+        library.addBookmark(for: book, position: position, label: "Page \(currentPageIndex + 1)")
     }
 
     // MARK: - Archive Loading
