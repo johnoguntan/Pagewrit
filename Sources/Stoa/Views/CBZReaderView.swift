@@ -25,6 +25,13 @@ struct CBZReaderView: View {
     @State private var archive: Archive?
     #endif
 
+    /// Manga/comics convention: right-to-left, where the "next" page is
+    /// physically to the left. Global rather than per-book — switching
+    /// mid-series would be the annoying case, not the common one, and a
+    /// per-book toggle would mean a schema migration on Book for a
+    /// preference most libraries only need in one direction anyway.
+    @AppStorage("stoa.cbzRightToLeft") private var rightToLeft = false
+
     private let extractionQueue = DispatchQueue(label: "com.sam.stoa.cbz-extraction")
 
     var body: some View {
@@ -42,10 +49,25 @@ struct CBZReaderView: View {
             saveProgress()
         }
         .focusable()
-        .onKeyPress(.rightArrow) { advance(1); return .handled }
-        .onKeyPress(.leftArrow) { advance(-1); return .handled }
-        .onKeyPress(.space) { advance(1); return .handled }
+        // Space always means "keep reading forward" regardless of
+        // direction — only the arrow keys and tap zones are spatial.
+        .onKeyPress(.rightArrow) { rightToLeft ? goBack() : goForward(); return .handled }
+        .onKeyPress(.leftArrow) { rightToLeft ? goForward() : goBack(); return .handled }
+        .onKeyPress(.space) { goForward(); return .handled }
     }
+
+    // MARK: - Directional Navigation
+    //
+    // "Forward"/"back" are always in reading order (index increases moving
+    // forward). Everything spatial — which arrow key, which tap zone,
+    // which chevron button — maps to one of these two based on
+    // `rightToLeft`, rather than every call site re-deriving the mapping.
+
+    private func goForward() { advance(1) }
+    private func goBack() { advance(-1) }
+
+    private var canGoBack: Bool { currentPageIndex > 0 }
+    private var canGoForward: Bool { currentPageIndex < pagePaths.count - 1 }
 
     // MARK: - Header
 
@@ -63,6 +85,23 @@ struct CBZReaderView: View {
                     .font(DesignTokens.sansFont(size: 12))
                     .foregroundStyle(.secondary)
             }
+
+            Button {
+                rightToLeft.toggle()
+            } label: {
+                Label(
+                    rightToLeft ? "Right to Left" : "Left to Right",
+                    systemImage: rightToLeft ? "arrow.left" : "arrow.right"
+                )
+                .font(DesignTokens.sansFont(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(DesignTokens.surface, in: Capsule())
+                .overlay(Capsule().stroke(DesignTokens.hairline(colorScheme: colorScheme), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .help("Reading direction \u{2014} switch for manga/right-to-left comics")
 
             Button {
                 dismiss()
@@ -102,8 +141,8 @@ struct CBZReaderView: View {
             }
 
             HStack(spacing: 0) {
-                tapZone { advance(-1) }
-                tapZone { advance(1) }
+                tapZone { rightToLeft ? goForward() : goBack() }
+                tapZone { rightToLeft ? goBack() : goForward() }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -132,12 +171,12 @@ struct CBZReaderView: View {
     private var footer: some View {
         HStack(spacing: DesignTokens.Spacing.lg) {
             Button {
-                advance(-1)
+                rightToLeft ? goForward() : goBack()
             } label: {
                 Image(systemName: "chevron.left")
             }
             .buttonStyle(.plain)
-            .disabled(currentPageIndex <= 0)
+            .disabled(rightToLeft ? !canGoForward : !canGoBack)
 
             if !pagePaths.isEmpty {
                 GeometryReader { geo in
@@ -157,12 +196,12 @@ struct CBZReaderView: View {
             }
 
             Button {
-                advance(1)
+                rightToLeft ? goBack() : goForward()
             } label: {
                 Image(systemName: "chevron.right")
             }
             .buttonStyle(.plain)
-            .disabled(currentPageIndex >= pagePaths.count - 1)
+            .disabled(rightToLeft ? !canGoBack : !canGoForward)
         }
         .padding(.horizontal, DesignTokens.Spacing.md)
         .padding(.vertical, DesignTokens.Spacing.sm)
