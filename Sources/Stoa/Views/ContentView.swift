@@ -1066,7 +1066,6 @@ struct HeroBand: View {
                         }
                     }
                     .frame(height: DesignTokens.Hero.Meta.blockHeight, alignment: .top)
-                    .padding(.top, DesignTokens.Hero.Rhythm.beforeButton)
 
                     Button {
                         showReader = true
@@ -1090,6 +1089,7 @@ struct HeroBand: View {
                         .padding(.horizontal, DesignTokens.Hero.Button.paddingH)
                         .background(DesignTokens.accent, in: Capsule())
                     }
+                    .padding(.top, DesignTokens.Hero.Rhythm.beforeButton)
                     .buttonStyle(TactileButtonStyle())
                 }
                 .frame(height: DesignTokens.Hero.height - DesignTokens.Hero.paddingV * 2)
