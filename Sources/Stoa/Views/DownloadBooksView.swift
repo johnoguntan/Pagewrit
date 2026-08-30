@@ -276,12 +276,14 @@ struct DownloadBooksView: View {
                 Button {
                     startDownload(result)
                 } label: {
-                    Text("Get")
-                        .font(DesignTokens.sansFont(size: 12, weight: .semibold))
+                    Label("Download", systemImage: "arrow.down.circle.fill")
+                        .labelStyle(.titleAndIcon)
+                        .font(DesignTokens.sansFont(size: 13, weight: .bold))
                         .foregroundStyle(.white)
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 16)
                         .background(DesignTokens.accent, in: Capsule())
+                        .shadow(color: DesignTokens.accent.opacity(0.35), radius: 6, x: 0, y: 2)
                 }
                 .buttonStyle(TactileButtonStyle())
             }
