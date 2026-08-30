@@ -227,9 +227,12 @@ struct DownloadBooksView: View {
         downloadStates[result.id] = .downloading
         Task {
             do {
-                try await GutenbergService.download(result)
+                let fileURL = try await GutenbergService.download(result)
                 downloadStates[result.id] = .done
-                NotificationCenter.default.post(name: .stoaBooksDownloaded, object: nil)
+                // Carries the downloaded file's URL so ContentView can
+                // import just this one file instead of rescanning every
+                // watched folder for one new arrival.
+                NotificationCenter.default.post(name: .stoaBooksDownloaded, object: fileURL)
             } catch {
                 downloadStates[result.id] = .failed
             }

@@ -160,8 +160,15 @@ struct ContentView: View {
     }
 
     /// Most recently added book for the hero band.
+    ///
+    /// `max(by:)` returns the element for which the predicate never says
+    /// "this one comes after that one" — i.e. the predicate must mean
+    /// "is less than", not "is greater than". `{ $0.addedAt > $1.addedAt }`
+    /// (the previous version of this line) actually asked max(by:) for the
+    /// *oldest* book, which is why Recently Added kept showing an old PDF
+    /// instead of whatever was just added.
     private var mostRecentBook: Book? {
-        library.books.max { $0.addedAt > $1.addedAt }
+        library.books.max { $0.addedAt < $1.addedAt }
     }
 
     /// The book to resume, if anything is in progress.
@@ -250,8 +257,16 @@ struct ContentView: View {
             else { return }
             spotlightBook = book
         }
-        .onReceive(NotificationCenter.default.publisher(for: .stoaBooksDownloaded)) { _ in
-            Task { await rescanAndImport() }
+        .onReceive(NotificationCenter.default.publisher(for: .stoaBooksDownloaded)) { note in
+            // Import just the one file that was downloaded, not a full
+            // rescan — walking every watched folder and re-hashing all
+            // ~40+ existing books for one new file is what made a single
+            // download feel like it triggered a long "scanning" pass.
+            if let url = note.object as? URL {
+                Task { await importSingleFile(at: url) }
+            } else {
+                Task { await rescanAndImport() }
+            }
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -328,6 +343,42 @@ struct ContentView: View {
     }
 
     // MARK: - Scan + Import pipeline
+
+    /// Import one already-known file directly — used for a book that was
+    /// just downloaded, where a full rescanAndImport() would walk every
+    /// watched folder and re-hash every existing book just to notice the
+    /// one new file. PDFs still get classified so a low-quality PDF landed
+    /// this way goes to Needs Review rather than skipping the check that
+    /// rescanAndImport() applies to everything else.
+    private func importSingleFile(at url: URL) async {
+        guard let format = BookFormat(fileExtension: url.pathExtension) else { return }
+        let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let file = DiscoveredFile(
+            url: url,
+            format: format,
+            sizeBytes: Int64(values?.fileSize ?? 0),
+            modifiedAt: values?.contentModificationDate
+        )
+
+        let hash = await Task.detached(priority: .userInitiated) {
+            ImportPipeline.contentHash(for: file.url)
+        }.value
+
+        guard !library.contains(hash: hash), library.classification(for: hash) == nil else { return }
+
+        if let result = await ImportPipeline.classifyFile(file, library: library, precomputedHash: hash) {
+            switch result.classification.decision {
+            case .autoAdded, .userConfirmed:
+                if let book = await ImportPipeline.importFile(file, libraryFolder: library.libraryFolder, precomputedHash: hash) {
+                    library.add(book)
+                }
+            case .needsReview, .autoSkipped, .userDismissed:
+                break
+            }
+        } else if let book = await ImportPipeline.importFile(file, libraryFolder: library.libraryFolder, precomputedHash: hash) {
+            library.add(book)
+        }
+    }
 
     /// Scan for files, classify PDFs, and import books into the library.
     /// EPUB/CBZ bypass classification; PDFs are scored and routed to
@@ -839,15 +890,23 @@ struct HeroBand: View {
     @State private var showReader = false
 
     private var relativeAdded: String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: book.addedAt, relativeTo: Date())
+        Self.relativeString(for: book.addedAt)
     }
 
     private var relativeOpened: String {
+        Self.relativeString(for: book.lastOpenedAt ?? book.addedAt)
+    }
+
+    /// RelativeDateTimeFormatter reads oddly for anything under a minute —
+    /// a book opened moments ago could format as "0 sec ago" or, if the
+    /// two Date() calls straddle a clock tick, "in 0 sec" (future tense,
+    /// for a book you're looking at right now). Anything under a minute
+    /// old just reads as "just now" instead.
+    private static func relativeString(for date: Date) -> String {
+        guard abs(Date().timeIntervalSince(date)) >= 60 else { return "just now" }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: book.lastOpenedAt ?? book.addedAt, relativeTo: Date())
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     var body: some View {

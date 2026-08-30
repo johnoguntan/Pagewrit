@@ -7,7 +7,9 @@ extension Notification.Name {
     static let stoaOpenBookFromSpotlight = Notification.Name("stoaOpenBookFromSpotlight")
 
     /// Posted after GutenbergService finishes saving a downloaded EPUB to
-    /// disk, so ContentView knows to rescan + import it into the library.
+    /// disk, carrying the file's URL as `object` — ContentView imports
+    /// just that one file (see importSingleFile) rather than rescanning
+    /// every watched folder for it.
     static let stoaBooksDownloaded = Notification.Name("stoaBooksDownloaded")
 }
 
