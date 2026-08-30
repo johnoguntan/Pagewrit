@@ -1043,6 +1043,7 @@ struct HeroBand: View {
                             Text("\(Int((book.readingProgress ?? 0) * 100))% \u{00b7} last opened \(relativeOpened)")
                                 .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
 
                             ProgressBar(fraction: book.readingProgress ?? 0)
                                 .frame(width: 220, height: 4)
@@ -1050,10 +1051,18 @@ struct HeroBand: View {
                             Text("\(book.format.rawValue.uppercased()) \u{00b7} \(relativeAdded)")
                                 .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         case .discover:
+                            // Deliberately the longest of the three meta
+                            // strings, and the one most likely to wrap at
+                            // this column width — lineLimit(1) keeps it
+                            // (truncated, if it must) inside the meta
+                            // block's fixed height so it can never spill
+                            // into the button below it.
                             Text("Added \(relativeAdded) \u{00b7} not started yet")
                                 .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
                     }
                     .frame(height: DesignTokens.Hero.Meta.blockHeight, alignment: .top)
