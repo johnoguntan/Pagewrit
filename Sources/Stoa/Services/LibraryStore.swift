@@ -51,7 +51,7 @@ final class LibraryStore: ObservableObject {
         let coversFolder = folder.appendingPathComponent("Covers", isDirectory: true)
         try? FileManager.default.createDirectory(at: coversFolder, withIntermediateDirectories: true)
 
-        let schema = Schema([Book.self, BookClassification.self, DismissedDuplicatePair.self])
+        let schema = Schema([Book.self, BookClassification.self, DismissedDuplicatePair.self, Bookmark.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         do {
             self.modelContainer = try ModelContainer(for: schema, configurations: [config])
@@ -63,6 +63,7 @@ final class LibraryStore: ObservableObject {
         loadBooks()
         loadClassifications()
         loadDismissedDuplicates()
+        loadBookmarks()
         buildSearchIndexIfNeeded()
         SpotlightIndexer.reindex(books)
     }
@@ -70,6 +71,34 @@ final class LibraryStore: ObservableObject {
     // MARK: - Classifications
 
     @Published private(set) var classifications: [BookClassification] = []
+
+    // MARK: - Bookmarks
+
+    @Published private(set) var bookmarks: [Bookmark] = []
+
+    /// A book's saved bookmarks, earliest position first.
+    func bookmarks(for book: Book) -> [Bookmark] {
+        bookmarks
+            .filter { $0.bookHash == book.contentHash }
+            .sorted { $0.position < $1.position }
+    }
+
+    /// Save a new bookmark at the reader's current position.
+    @discardableResult
+    func addBookmark(for book: Book, position: Double, label: String) -> Bookmark {
+        let bookmark = Bookmark(bookHash: book.contentHash, position: position, label: label)
+        modelContext.insert(bookmark)
+        bookmarks.append(bookmark)
+        try? modelContext.save()
+        return bookmark
+    }
+
+    /// Remove a bookmark.
+    func removeBookmark(_ bookmark: Bookmark) {
+        modelContext.delete(bookmark)
+        bookmarks.removeAll { $0.persistentModelID == bookmark.persistentModelID }
+        try? modelContext.save()
+    }
 
     // MARK: - Duplicates
 
@@ -240,6 +269,17 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    /// Fetch all bookmarks from the persistent store.
+    private func loadBookmarks() {
+        let descriptor = FetchDescriptor<Bookmark>(sortBy: [SortDescriptor(\.createdAt, order: .forward)])
+        do {
+            bookmarks = try modelContext.fetch(descriptor)
+        } catch {
+            print("LibraryStore: failed to fetch bookmarks: \(error)")
+            bookmarks = []
+        }
+    }
+
     /// Fetch all books from the persistent store, sorted by addedAt descending.
     private func loadBooks() {
         let descriptor = FetchDescriptor<Book>(sortBy: [SortDescriptor(\.addedAt, order: .reverse)])
@@ -359,6 +399,7 @@ final class LibraryStore: ObservableObject {
         loadBooks()
         loadClassifications()
         loadDismissedDuplicates()
+        loadBookmarks()
         buildSearchIndexIfNeeded()
         SpotlightIndexer.reindex(books)
     }
