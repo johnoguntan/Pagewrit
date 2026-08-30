@@ -15,7 +15,7 @@ final class Book: Hashable {
     var coverImagePath: String?
     var addedAt: Date
     var tags: [String]
-    var shelfNames: [String]
+    var shelfNames: [String] = []
     var readingProgress: Double?   // 0.0...1.0, optional
     var contentHash: String        // SHA256 of file bytes, for dedup
     var sizeBytes: Int64
