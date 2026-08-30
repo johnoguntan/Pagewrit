@@ -51,7 +51,7 @@ final class LibraryStore: ObservableObject {
         let coversFolder = folder.appendingPathComponent("Covers", isDirectory: true)
         try? FileManager.default.createDirectory(at: coversFolder, withIntermediateDirectories: true)
 
-        let schema = Schema([Book.self, BookClassification.self])
+        let schema = Schema([Book.self, BookClassification.self, DismissedDuplicatePair.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         do {
             self.modelContainer = try ModelContainer(for: schema, configurations: [config])
@@ -62,6 +62,7 @@ final class LibraryStore: ObservableObject {
 
         loadBooks()
         loadClassifications()
+        loadDismissedDuplicates()
         buildSearchIndexIfNeeded()
         SpotlightIndexer.reindex(books)
     }
@@ -69,6 +70,28 @@ final class LibraryStore: ObservableObject {
     // MARK: - Classifications
 
     @Published private(set) var classifications: [BookClassification] = []
+
+    // MARK: - Duplicates
+
+    @Published private(set) var dismissedDuplicatePairs: [DismissedDuplicatePair] = []
+
+    /// Groups of two or more books that look like the same work saved
+    /// twice (matched on normalized title+author, not file bytes — so it
+    /// catches an EPUB/PDF pair of the same book, which contentHash never
+    /// would), excluding any pair the user has already dismissed.
+    var duplicateGroups: [[Book]] {
+        let dismissedKeys = Set(dismissedDuplicatePairs.map(\.pairKey))
+        return DuplicateDetector.findGroups(in: books, dismissedPairKeys: dismissedKeys)
+    }
+
+    /// Record that the user looked at these two books and decided to keep
+    /// both, so this pair stops showing up in the Duplicates tray.
+    func dismissDuplicate(_ first: Book, _ second: Book) {
+        let pair = DismissedDuplicatePair(firstHash: first.contentHash, secondHash: second.contentHash)
+        modelContext.insert(pair)
+        dismissedDuplicatePairs.append(pair)
+        try? modelContext.save()
+    }
 
     /// Files the user has dismissed ("not a book") — checked during import
     /// to prevent re-importing after rescan.
@@ -206,6 +229,17 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    /// Fetch all dismissed-duplicate pair records from the persistent store.
+    private func loadDismissedDuplicates() {
+        let descriptor = FetchDescriptor<DismissedDuplicatePair>()
+        do {
+            dismissedDuplicatePairs = try modelContext.fetch(descriptor)
+        } catch {
+            print("LibraryStore: failed to fetch dismissed duplicate pairs: \(error)")
+            dismissedDuplicatePairs = []
+        }
+    }
+
     /// Fetch all books from the persistent store, sorted by addedAt descending.
     private func loadBooks() {
         let descriptor = FetchDescriptor<Book>(sortBy: [SortDescriptor(\.addedAt, order: .reverse)])
@@ -324,6 +358,7 @@ final class LibraryStore: ObservableObject {
     func refresh() {
         loadBooks()
         loadClassifications()
+        loadDismissedDuplicates()
         buildSearchIndexIfNeeded()
         SpotlightIndexer.reindex(books)
     }

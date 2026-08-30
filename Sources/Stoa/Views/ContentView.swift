@@ -108,7 +108,7 @@ struct ContentView: View {
         var books = library.books
 
         switch sidebarSelection {
-        case .library, .needsReview, .none:
+        case .library, .needsReview, .duplicates, .none:
             break  // show all books
         case .folder(let path):
             let folderPath = path.hasSuffix("/") ? path : path + "/"
@@ -354,7 +354,7 @@ struct ContentView: View {
     /// filename.
     private var currentListTitle: String {
         switch sidebarSelection {
-        case .library, .needsReview, .none:
+        case .library, .needsReview, .duplicates, .none:
             return "All Books"
         case .folder(let path):
             return URL(fileURLWithPath: path).lastPathComponent
@@ -537,6 +537,7 @@ struct ContentView: View {
     enum SidebarSelection: Hashable {
         case library
         case needsReview
+        case duplicates
         case folder(String)
         case format(String)
         case tag(String)
@@ -567,6 +568,15 @@ struct ContentView: View {
                         icon: "questionmark.diamond",
                         selection: .needsReview,
                         badge: "\(library.needsReview.count)"
+                    )
+                }
+
+                if !library.duplicateGroups.isEmpty {
+                    sidebarRow(
+                        title: "Duplicates",
+                        icon: "doc.on.doc",
+                        selection: .duplicates,
+                        badge: "\(library.duplicateGroups.count)"
                     )
                 }
 
@@ -794,6 +804,9 @@ struct ContentView: View {
 
             if sidebarSelection == .needsReview {
                 NeedsReviewTray()
+                    .environmentObject(library)
+            } else if sidebarSelection == .duplicates {
+                DuplicatesTray()
                     .environmentObject(library)
             } else if sortedBooks.isEmpty && !scanner.isScanning && !library.isImporting {
                 emptyState
@@ -1656,6 +1669,173 @@ private struct ReviewRow: View {
         CoverThumbnailCache.shared.loadThumbnail(for: classification.sourceURL) { image in
             withAnimation(.easeIn(duration: 0.25)) {
                 thumbnail = image
+            }
+        }
+    }
+}
+
+// MARK: - DuplicatesTray
+
+/// Lists groups of books that look like the same work saved more than
+/// once — most often the same title across two formats. Mirrors
+/// NeedsReviewTray's shape (header, scrollable list, empty state); each
+/// group renders as its own card so several duplicate sets can be
+/// resolved one at a time without losing your place in the list.
+struct DuplicatesTray: View {
+    @EnvironmentObject private var library: LibraryStore
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if library.duplicateGroups.isEmpty {
+                emptyState
+            } else {
+                header
+                list
+            }
+        }
+        .background(DesignTokens.background.ignoresSafeArea())
+    }
+
+    private var header: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: DesignTokens.Spacing.xxs) {
+                Text("Duplicates")
+                    .font(DesignTokens.serifFont(
+                        size: DesignTokens.SectionHeader.fontSize,
+                        weight: .bold
+                    ))
+                    .tracking(DesignTokens.SectionHeader.tracking)
+                    .foregroundStyle(.primary)
+
+                Text("\(library.duplicateGroups.count) possible duplicate\(library.duplicateGroups.count == 1 ? "" : "s") \u{2014} likely the same book saved twice")
+                    .font(DesignTokens.sansFont(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, DesignTokens.Spacing.xl)
+        .padding(.top, DesignTokens.Spacing.lg)
+        .padding(.bottom, DesignTokens.Spacing.sm)
+    }
+
+    private var list: some View {
+        ScrollView {
+            LazyVStack(spacing: DesignTokens.Spacing.md) {
+                ForEach(Array(library.duplicateGroups.enumerated()), id: \.offset) { _, group in
+                    DuplicateGroupCard(books: group)
+                }
+            }
+            .padding(.horizontal, DesignTokens.Spacing.xl)
+            .padding(.bottom, DesignTokens.Spacing.xxl)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: DesignTokens.Spacing.md) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 48))
+                .foregroundStyle(.tertiary)
+
+            Text("No duplicates")
+                .font(DesignTokens.serifFont(size: 18, weight: .semibold))
+
+            Text("Every book in your library looks distinct.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - DuplicateGroupCard
+
+/// One suspected-duplicate group: every copy listed side by side with its
+/// format and size, a delete action per copy, and a "Keep Both" action
+/// that dismisses the whole group without deleting anything.
+private struct DuplicateGroupCard: View {
+    let books: [Book]
+    @EnvironmentObject private var library: LibraryStore
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
+            Text(books.first?.title ?? "Untitled")
+                .font(DesignTokens.sansFont(size: 14, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            VStack(spacing: DesignTokens.Spacing.xs) {
+                ForEach(books, id: \.persistentModelID) { book in
+                    copyRow(book)
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button {
+                    dismissGroup()
+                } label: {
+                    Text("Keep Both")
+                        .font(DesignTokens.sansFont(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(.separator, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(DesignTokens.Spacing.md)
+        .background(DesignTokens.surface, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(DesignTokens.hairline(colorScheme: colorScheme), lineWidth: 1)
+        )
+    }
+
+    private func copyRow(_ book: Book) -> some View {
+        HStack(spacing: DesignTokens.Spacing.sm) {
+            Text(book.format.sectionTitle)
+                .font(DesignTokens.sansFont(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Color.black.opacity(colorScheme == .dark ? 0.08 : 0.06), in: Capsule())
+
+            Text(byteFormatter.string(fromByteCount: book.sizeBytes))
+                .font(DesignTokens.sansFont(size: 11))
+                .foregroundStyle(.tertiary)
+
+            Spacer()
+
+            Button {
+                library.deleteFile(for: book)
+            } label: {
+                Text("Delete This Copy")
+                    .font(DesignTokens.sansFont(size: 11, weight: .medium))
+                    .foregroundStyle(.red)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var byteFormatter: ByteCountFormatter {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        return formatter
+    }
+
+    private func dismissGroup() {
+        for i in 0..<books.count {
+            for j in (i + 1)..<books.count {
+                library.dismissDuplicate(books[i], books[j])
             }
         }
     }
