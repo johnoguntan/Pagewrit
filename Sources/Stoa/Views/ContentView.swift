@@ -899,6 +899,16 @@ enum HeroKind {
         case .discover: "Read"
         }
     }
+
+    /// A small directional cue on the button so each card's action reads
+    /// at a glance, not just from the label.
+    var buttonIcon: String {
+        switch self {
+        case .continueReading: "play.fill"
+        case .recentlyAdded: "arrow.right"
+        case .discover: "book.fill"
+        }
+    }
 }
 
 // MARK: - HeroBand
@@ -1011,17 +1021,19 @@ struct HeroBand: View {
                     Button {
                         showReader = true
                     } label: {
-                        Text(kind.buttonLabel)
+                        Label(kind.buttonLabel, systemImage: kind.buttonIcon)
+                            .labelStyle(.titleAndIcon)
                             .font(DesignTokens.sansFont(
                                 size: DesignTokens.Hero.Button.fontSize,
-                                weight: .semibold
+                                weight: .bold
                             ))
                             .foregroundStyle(.white)
                             .padding(.vertical, DesignTokens.Hero.Button.paddingV)
                             .padding(.horizontal, DesignTokens.Hero.Button.paddingH)
-                            .background(
-                                DesignTokens.accent,
-                                in: RoundedRectangle(cornerRadius: DesignTokens.Hero.Button.cornerRadius)
+                            .background(DesignTokens.accent, in: Capsule())
+                            .shadow(
+                                color: DesignTokens.accent.opacity(0.45),
+                                radius: 12, x: 0, y: 5
                             )
                     }
                     .buttonStyle(TactileButtonStyle())
