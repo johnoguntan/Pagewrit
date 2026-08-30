@@ -10,7 +10,7 @@ import PDFKit
 struct PDFReaderView: View {
     let book: Book
     @EnvironmentObject private var library: LibraryStore
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissWindow) private var dismissWindow
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var document: PDFDocument?
@@ -111,7 +111,7 @@ struct PDFReaderView: View {
             themeMenu
 
             Button {
-                dismiss()
+                dismissWindow()
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 18))

@@ -68,5 +68,50 @@ struct StoaApp: App {
                 .keyboardShortcut(",", modifiers: .command)
             }
         }
+
+        // A real, separate window for the reader — not a .sheet. Sheets are
+        // docked to their parent window and can't be dragged or resized
+        // independently, which doesn't suit long reading sessions where
+        // people want to move the reader to another display, snap it
+        // beside another app, or full-screen it on its own. Keyed by the
+        // book's contentHash so macOS can restore/reuse a reader window
+        // per book rather than stacking duplicates.
+        WindowGroup(id: "reader", for: String.self) { $bookHash in
+            ReaderWindowContent(bookHash: bookHash)
+                .environmentObject(library)
+                .frame(minWidth: 480, minHeight: 360)
+                .background(DesignTokens.background.ignoresSafeArea())
+        }
+        .windowStyle(.automatic)
+        .defaultSize(width: 900, height: 760)
+        .commandsRemoved()
+    }
+}
+
+/// Resolves a reader window's launch value (a book's contentHash) to the
+/// live `Book` in the library. Looking it up rather than capturing the
+/// `Book` value directly means the window stays correct if the book's
+/// metadata changes while the window is open, and degrades gracefully if
+/// the book was removed from the library while the window was open.
+private struct ReaderWindowContent: View {
+    let bookHash: String?
+    @EnvironmentObject private var library: LibraryStore
+
+    var body: some View {
+        if let bookHash, let book = library.books.first(where: { $0.contentHash == bookHash }) {
+            BookReaderSheet(book: book)
+                .environmentObject(library)
+        } else {
+            VStack(spacing: DesignTokens.Spacing.sm) {
+                Image(systemName: "book.closed")
+                    .font(.system(size: 32))
+                    .foregroundStyle(.secondary)
+                Text("This book is no longer in your library.")
+                    .font(DesignTokens.sansFont(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(DesignTokens.background.ignoresSafeArea())
+        }
     }
 }

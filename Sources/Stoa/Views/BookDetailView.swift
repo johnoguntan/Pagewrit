@@ -9,9 +9,9 @@ struct BookDetailView: View {
     let book: Book
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openWindow) private var openWindow
     @State private var newTagText = ""
     @State private var newShelfText = ""
-    @State private var showReader = false
     @State private var showDeleteConfirmation = false
     @State private var showMetadataLookup = false
     @Environment(\.dismiss) private var dismiss
@@ -26,9 +26,6 @@ struct BookDetailView: View {
         }
         .background(DesignTokens.background.ignoresSafeArea())
         .navigationTitle(book.title)
-        .sheet(isPresented: $showReader) {
-            readerSheet
-        }
         .sheet(isPresented: $showMetadataLookup) {
             MetadataLookupView(book: book)
                 .environmentObject(library)
@@ -46,13 +43,6 @@ struct BookDetailView: View {
         } message: {
             Text("This moves the file itself to the Trash, not just Stoa's library entry. This can't be undone from inside Stoa.")
         }
-    }
-
-    // MARK: - In-App Reader
-
-    private var readerSheet: some View {
-        BookReaderSheet(book: book)
-            .environmentObject(library)
     }
 
     // MARK: - Cover (left column)
@@ -260,7 +250,7 @@ struct BookDetailView: View {
         HStack(spacing: DesignTokens.Spacing.sm) {
             Button {
                 if book.format == .pdf || book.format == .cbz || book.format == .epub {
-                    showReader = true
+                    openWindow(id: "reader", value: book.contentHash)
                 } else {
                     NSWorkspace.shared.open(book.sourceURL)
                 }

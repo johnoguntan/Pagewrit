@@ -12,7 +12,7 @@ import ZIPFoundation
 struct CBZReaderView: View {
     let book: Book
     @EnvironmentObject private var library: LibraryStore
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissWindow) private var dismissWindow
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var pagePaths: [String] = []
@@ -107,7 +107,7 @@ struct CBZReaderView: View {
             bookmarkButton
 
             Button {
-                dismiss()
+                dismissWindow()
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 18))

@@ -17,7 +17,7 @@ import Foundation
 struct EPUBReaderView: View {
     let book: Book
     @EnvironmentObject private var library: LibraryStore
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissWindow) private var dismissWindow
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var epub: EPUBDocument?
@@ -112,7 +112,7 @@ struct EPUBReaderView: View {
             readAloudButton
 
             Button {
-                dismiss()
+                dismissWindow()
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 18))

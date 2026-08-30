@@ -63,12 +63,13 @@ struct ContentView: View {
     @EnvironmentObject private var scanner: ScannerService
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.openWindow) private var openWindow
     @State private var searchText = ""
     @State private var sortOrder: SortOption = .recentlyAdded
     @State private var importTaskID: UUID?
     @AppStorage("stoa.gridDensity") private var gridDensityRaw: String = GridDensity.comfortable.rawValue
-    @State private var spotlightBook: Book?
     @State private var showDownloadBooks = false
+    @State private var navigationPath = NavigationPath()
 
     private var gridDensity: GridDensity {
         GridDensity(rawValue: gridDensityRaw) ?? .comfortable
@@ -268,7 +269,7 @@ struct ContentView: View {
             // NavigationSplitView itself — attached there, SwiftUI logs
             // "misplaced navigationDestination... it will be ignored" and
             // NavigationLink(value:) taps silently do nothing.
-            NavigationStack {
+            NavigationStack(path: $navigationPath) {
                 detailContent
                     .navigationDestination(for: Book.self) { book in
                         BookDetailView(book: book)
@@ -277,19 +278,23 @@ struct ContentView: View {
             }
         }
         .navigationTitle("Library")
+        // Sidebar selection swaps out `detailContent`, but the detail
+        // column's own NavigationStack keeps its push stack regardless \u{2014}
+        // without this, picking a sidebar item while a book detail page is
+        // pushed on top just silently does nothing, since the pushed page
+        // stays on screen either way.
+        .onChange(of: sidebarSelection) { _, _ in
+            navigationPath = NavigationPath()
+        }
         .searchable(text: $searchText, prompt: "Search books \u{2014} titles, tags, and book contents")
         .onChange(of: searchText) { _, newValue in
             library.searchContent(newValue)
         }
-        .sheet(item: $spotlightBook) { book in
-            BookReaderSheet(book: book)
-                .environmentObject(library)
-        }
         .onReceive(NotificationCenter.default.publisher(for: .stoaOpenBookFromSpotlight)) { note in
             guard let hash = note.object as? String,
-                  let book = library.books.first(where: { $0.contentHash == hash })
+                  library.books.contains(where: { $0.contentHash == hash })
             else { return }
-            spotlightBook = book
+            openWindow(id: "reader", value: hash)
         }
         .onReceive(NotificationCenter.default.publisher(for: .stoaBooksDownloaded)) { note in
             // Import just the one file that was downloaded, not a full
@@ -992,7 +997,7 @@ struct HeroBand: View {
     var kind: HeroKind = .recentlyAdded
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.colorScheme) private var colorScheme
-    @State private var showReader = false
+    @Environment(\.openWindow) private var openWindow
 
     private var relativeAdded: String {
         Self.relativeString(for: book.addedAt)
@@ -1102,7 +1107,7 @@ struct HeroBand: View {
                     .frame(height: DesignTokens.Hero.Meta.blockHeight, alignment: .top)
 
                     Button {
-                        showReader = true
+                        openWindow(id: "reader", value: book.contentHash)
                     } label: {
                         // A plain HStack, not Label, so icon size and
                         // icon/text spacing are set explicitly rather
@@ -1135,10 +1140,6 @@ struct HeroBand: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(height: DesignTokens.Hero.height)
-        .sheet(isPresented: $showReader) {
-            BookReaderSheet(book: book)
-                .environmentObject(library)
-        }
         .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Hero.cornerRadius))
     }
 }
@@ -1168,8 +1169,8 @@ struct BookCoverTile: View {
     @EnvironmentObject private var library: LibraryStore
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
-    @State private var showReader = false
     @State private var showDeleteConfirmation = false
+    @Environment(\.openWindow) private var openWindow
 
     private var secondaryLine: String {
         if let author = book.author, !author.isEmpty {
@@ -1237,11 +1238,11 @@ struct BookCoverTile: View {
         // often just navigate to the detail view instead.
         .highPriorityGesture(
             TapGesture(count: 2)
-                .onEnded { showReader = true }
+                .onEnded { openWindow(id: "reader", value: book.contentHash) }
         )
         .contextMenu {
             Button {
-                showReader = true
+                openWindow(id: "reader", value: book.contentHash)
             } label: {
                 Label("Read", systemImage: "book.fill")
             }
@@ -1292,10 +1293,6 @@ struct BookCoverTile: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This moves the file itself to the Trash, not just Stoa's library entry. This can't be undone from inside Stoa.")
-        }
-        .sheet(isPresented: $showReader) {
-            BookReaderSheet(book: book)
-                .environmentObject(library)
         }
     }
 }
