@@ -119,6 +119,8 @@ struct ContentView: View {
             }
         case .tag(let tag):
             books = books.filter { $0.tags.contains(tag) }
+        case .author(let name):
+            books = books.filter { $0.author == name }
         }
 
         guard !searchText.isEmpty else { return books }
@@ -134,6 +136,15 @@ struct ContentView: View {
     /// sidebar's TAGS section — only shown once at least one book has one.
     private var allTags: [String] {
         Set(library.books.flatMap(\.tags)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    /// Every distinct author across the library, alphabetically, for the
+    /// sidebar's AUTHORS section — books with no author (or a blank one)
+    /// have nothing to browse by, so they're simply left out.
+    private var allAuthors: [String] {
+        let names = library.books.compactMap { $0.author?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return Set(names).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     private var sortedBooks: [Book] {
@@ -328,6 +339,8 @@ struct ContentView: View {
             return BookFormat(rawValue: rawValue)?.sectionTitle ?? "Books"
         case .tag(let tag):
             return "#\(tag)"
+        case .author(let name):
+            return name
         }
     }
 
@@ -502,6 +515,7 @@ struct ContentView: View {
         case folder(String)
         case format(String)
         case tag(String)
+        case author(String)
     }
 
     @State private var sidebarSelection: SidebarSelection? = .library
@@ -549,6 +563,14 @@ struct ContentView: View {
                         selection: .format(format.rawValue),
                         iconColor: DesignTokens.formatColor(for: format)
                     )
+                }
+
+                if !allAuthors.isEmpty {
+                    sidebarSectionLabel("AUTHORS")
+
+                    ForEach(allAuthors, id: \.self) { author in
+                        sidebarRow(title: author, icon: "person", selection: .author(author))
+                    }
                 }
 
                 if !allTags.isEmpty {
