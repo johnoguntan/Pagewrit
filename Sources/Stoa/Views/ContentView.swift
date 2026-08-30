@@ -187,16 +187,29 @@ struct ContentView: View {
         library.continueReading.first
     }
 
-    /// The book that's been sitting unread the longest — a quiet nudge
-    /// to get to something already on the shelf, rather than another
-    /// "recently added" card. Excludes whatever's already shown earlier
-    /// in the rail so the row never repeats a book. Keyed by contentHash
-    /// (not Book's SwiftData id) to match how the rest of the app already
-    /// identifies a book — see SpotlightIndexer, dedup, etc.
+    /// A different unread book spotlighted each calendar day, rather
+    /// than always the oldest thing on the shelf — a rotating "still on
+    /// your shelf" nudge instead of a static one. Excludes whatever's
+    /// already shown earlier in the rail so the row never repeats a
+    /// book. Keyed by contentHash (not Book's SwiftData id) to match how
+    /// the rest of the app already identifies a book — see
+    /// SpotlightIndexer, dedup, etc.
+    ///
+    /// The pick is seeded from today's date, not truly random: reopening
+    /// the app, rescanning, or relaunching mid-day all land on the same
+    /// book, and only rolls over to a new one at local midnight. Sorting
+    /// the eligible pool by contentHash first (SwiftData's fetch order
+    /// isn't guaranteed stable) guarantees the same day always maps to
+    /// the same index, and therefore the same book.
     private func discoverBook(excluding shownHashes: Set<String>) -> Book? {
-        library.books
+        let eligible = library.books
             .filter { !shownHashes.contains($0.contentHash) && ($0.readingProgress ?? 0) == 0 }
-            .min { $0.addedAt < $1.addedAt }
+            .sorted { $0.contentHash < $1.contentHash }
+        guard !eligible.isEmpty else { return nil }
+
+        let startOfDay = Calendar.current.startOfDay(for: Date())
+        var rng = DailySeededGenerator(date: startOfDay)
+        return eligible.randomElement(using: &rng)
     }
 
     /// Cards for the hero rail, in display order. Continue Reading leads
@@ -868,6 +881,29 @@ struct ProgressBar: View {
     }
 }
 
+// MARK: - DailySeededGenerator
+
+/// A minimal seeded RNG (SplitMix64) so a "pick of the day" is
+/// reproducible for the same calendar day without pulling in
+/// GameplayKit for one random pick — deterministic per seed, not
+/// cryptographically random, which is exactly what a book-of-the-day
+/// rotation needs.
+struct DailySeededGenerator: RandomNumberGenerator {
+    private var state: UInt64
+
+    init(date: Date) {
+        state = UInt64(bitPattern: Int64(date.timeIntervalSince1970))
+    }
+
+    mutating func next() -> UInt64 {
+        state &+= 0x9E3779B97F4A7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+        z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+        return z ^ (z >> 31)
+    }
+}
+
 // MARK: - HeroKind
 
 /// What a hero card is spotlighting. Each case owns its own eyebrow
@@ -971,10 +1007,14 @@ struct HeroBand: View {
 
                 // Spacing here is deliberately uneven — see
                 // DesignTokens.Hero.Rhythm — rather than one repeated
-                // VStack gap. The title's reserved blockHeight, and the
-                // Spacer + fixed card height pinning the button to the
-                // bottom, are what keep every card in the rail aligned
-                // regardless of title length or which meta row it shows.
+                // VStack gap. The title's reserved blockHeight and the
+                // meta block's reserved blockHeight (below) are what keep
+                // every card in the rail aligned: with everything above
+                // the button at a fixed height, a fixed Rhythm.beforeButton
+                // gap (not an elastic Spacer) lands the button at the same
+                // Y with the same visual distance from its content on
+                // every card, regardless of title length or which meta
+                // row it shows.
                 VStack(alignment: .leading, spacing: 0) {
                     Text(kind.eyebrow)
                         .font(DesignTokens.sansFont(
@@ -997,26 +1037,27 @@ struct HeroBand: View {
                         .frame(height: DesignTokens.Hero.Title.blockHeight, alignment: .topLeading)
                         .padding(.bottom, DesignTokens.Hero.Rhythm.afterTitle)
 
-                    switch kind {
-                    case .continueReading:
-                        Text("\(Int((book.readingProgress ?? 0) * 100))% \u{00b7} last opened \(relativeOpened)")
-                            .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
-                            .foregroundStyle(.secondary)
-                            .padding(.bottom, DesignTokens.Hero.Rhythm.beforeMeta)
+                    VStack(alignment: .leading, spacing: DesignTokens.Hero.Rhythm.beforeMeta) {
+                        switch kind {
+                        case .continueReading:
+                            Text("\(Int((book.readingProgress ?? 0) * 100))% \u{00b7} last opened \(relativeOpened)")
+                                .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
+                                .foregroundStyle(.secondary)
 
-                        ProgressBar(fraction: book.readingProgress ?? 0)
-                            .frame(width: 220, height: 4)
-                    case .recentlyAdded:
-                        Text("\(book.format.rawValue.uppercased()) \u{00b7} \(relativeAdded)")
-                            .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
-                            .foregroundStyle(.secondary)
-                    case .discover:
-                        Text("Added \(relativeAdded) \u{00b7} not started yet")
-                            .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
-                            .foregroundStyle(.secondary)
+                            ProgressBar(fraction: book.readingProgress ?? 0)
+                                .frame(width: 220, height: 4)
+                        case .recentlyAdded:
+                            Text("\(book.format.rawValue.uppercased()) \u{00b7} \(relativeAdded)")
+                                .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
+                                .foregroundStyle(.secondary)
+                        case .discover:
+                            Text("Added \(relativeAdded) \u{00b7} not started yet")
+                                .font(DesignTokens.sansFont(size: DesignTokens.Hero.Meta.fontSize))
+                                .foregroundStyle(.secondary)
+                        }
                     }
-
-                    Spacer(minLength: 0)
+                    .frame(height: DesignTokens.Hero.Meta.blockHeight, alignment: .top)
+                    .padding(.top, DesignTokens.Hero.Rhythm.beforeButton)
 
                     Button {
                         showReader = true

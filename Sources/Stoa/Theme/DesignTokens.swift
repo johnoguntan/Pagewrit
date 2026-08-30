@@ -209,6 +209,15 @@ enum DesignTokens {
 
         enum Meta {
             static let fontSize: CGFloat = 13
+
+            /// Reserves height for the tallest variant (the Continue
+            /// Reading card's meta line + progress bar) so every card's
+            /// meta block occupies the same space regardless of which
+            /// kind it is — the button below it then sits a fixed
+            /// Rhythm.beforeButton gap under that, instead of an elastic
+            /// Spacer swallowing whatever's left and making the gap
+            /// above the button different card to card.
+            static let blockHeight: CGFloat = 30
         }
 
         enum Button {
