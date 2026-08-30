@@ -1021,20 +1021,24 @@ struct HeroBand: View {
                     Button {
                         showReader = true
                     } label: {
-                        Label(kind.buttonLabel, systemImage: kind.buttonIcon)
-                            .labelStyle(.titleAndIcon)
-                            .font(DesignTokens.sansFont(
-                                size: DesignTokens.Hero.Button.fontSize,
-                                weight: .bold
-                            ))
-                            .foregroundStyle(.white)
-                            .padding(.vertical, DesignTokens.Hero.Button.paddingV)
-                            .padding(.horizontal, DesignTokens.Hero.Button.paddingH)
-                            .background(DesignTokens.accent, in: Capsule())
-                            .shadow(
-                                color: DesignTokens.accent.opacity(0.45),
-                                radius: 12, x: 0, y: 5
-                            )
+                        // A plain HStack, not Label, so icon size and
+                        // icon/text spacing are set explicitly rather
+                        // than inherited from Label's own (looser)
+                        // defaults — that mismatch was what read as
+                        // misaligned.
+                        HStack(spacing: 5) {
+                            Image(systemName: kind.buttonIcon)
+                                .font(.system(size: 10, weight: .semibold))
+                            Text(kind.buttonLabel)
+                                .font(DesignTokens.sansFont(
+                                    size: DesignTokens.Hero.Button.fontSize,
+                                    weight: .semibold
+                                ))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.vertical, DesignTokens.Hero.Button.paddingV)
+                        .padding(.horizontal, DesignTokens.Hero.Button.paddingH)
+                        .background(DesignTokens.accent, in: Capsule())
                     }
                     .buttonStyle(TactileButtonStyle())
                 }

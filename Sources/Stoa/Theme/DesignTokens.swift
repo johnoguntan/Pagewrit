@@ -212,9 +212,9 @@ enum DesignTokens {
         }
 
         enum Button {
-            static let fontSize: CGFloat = 14
-            static let paddingV: CGFloat = 12
-            static let paddingH: CGFloat = 22
+            static let fontSize: CGFloat = 12
+            static let paddingV: CGFloat = 7
+            static let paddingH: CGFloat = 15
         }
 
         /// Uneven on purpose: tightest right under the title (eyebrow and
