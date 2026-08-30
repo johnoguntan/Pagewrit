@@ -1047,6 +1047,7 @@ struct BookCoverTile: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovered = false
     @State private var showReader = false
+    @State private var showDeleteConfirmation = false
 
     private var secondaryLine: String {
         if let author = book.author, !author.isEmpty {
@@ -1145,6 +1146,24 @@ struct BookCoverTile: View {
             } label: {
                 Label("Remove & Never Re-add", systemImage: "xmark.bin")
             }
+
+            Button(role: .destructive) {
+                showDeleteConfirmation = true
+            } label: {
+                Label("Delete File\u{2026}", systemImage: "trash")
+            }
+        }
+        .confirmationDialog(
+            "Delete \u{201c}\(book.title)\u{201d}?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete File", role: .destructive) {
+                library.deleteFile(for: book)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This moves the file itself to the Trash, not just Stoa's library entry. This can't be undone from inside Stoa.")
         }
         .sheet(isPresented: $showReader) {
             BookReaderSheet(book: book)

@@ -11,6 +11,8 @@ struct BookDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var newTagText = ""
     @State private var showReader = false
+    @State private var showDeleteConfirmation = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         ScrollView {
@@ -24,6 +26,19 @@ struct BookDetailView: View {
         .navigationTitle(book.title)
         .sheet(isPresented: $showReader) {
             readerSheet
+        }
+        .confirmationDialog(
+            "Delete \u{201c}\(book.title)\u{201d}?",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete File", role: .destructive) {
+                library.deleteFile(for: book)
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This moves the file itself to the Trash, not just Stoa's library entry. This can't be undone from inside Stoa.")
         }
     }
 
@@ -196,6 +211,19 @@ struct BookDetailView: View {
                     )
             }
             .buttonStyle(.plain)
+
+            Spacer(minLength: 0)
+
+            Button {
+                showDeleteConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .padding(DesignTokens.Detail.SecondaryButton.paddingV)
+            }
+            .buttonStyle(.plain)
+            .help("Delete file\u{2026}")
         }
     }
 

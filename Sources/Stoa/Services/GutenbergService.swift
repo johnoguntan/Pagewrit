@@ -26,16 +26,12 @@ enum GutenbergService {
             authors.map(\.name).joined(separator: ", ")
         }
 
-        /// Gutendex often lists more than one EPUB variant for the same
-        /// book (a "with images" and a smaller "noimages" text-only one).
-        /// Prefer the smaller one — faster download, and Stoa's readers
-        /// don't need illustration plates to render the text.
+        /// Gutendex exposes exactly one EPUB entry per book, keyed by
+        /// MIME type — a dictionary can't hold two "application/epub+zip"
+        /// keys, so there's never a choice of variant to make here.
         var epubURL: URL? {
-            let epubEntries = formats.filter { $0.key.hasPrefix("application/epub+zip") }
-            if let noImages = epubEntries.first(where: { $0.key.contains("noimages") }) {
-                return URL(string: noImages.value)
-            }
-            return epubEntries.first.flatMap { URL(string: $0.value) }
+            formats.first { $0.key.hasPrefix("application/epub+zip") }
+                .flatMap { URL(string: $0.value) }
         }
     }
 

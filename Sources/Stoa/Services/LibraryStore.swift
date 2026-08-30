@@ -134,6 +134,44 @@ final class LibraryStore: ObservableObject {
         try? modelContext.save()
     }
 
+    /// Moves the book's underlying source file to the Trash (plus its
+    /// cached cover and extracted-text sidecar files, which are deleted
+    /// outright — they're Stoa's own derived data, not something worth
+    /// recovering), then removes it from the library. Unlike
+    /// removeAndExclude, this doesn't record a dismissed classification —
+    /// there's nothing left on disk to re-discover on a future rescan.
+    ///
+    /// Trash, not permanent delete: this reaches outside StoaLibrary's own
+    /// folder into wherever the user's Finder put the file (Documents, a
+    /// watched folder, etc.), so a mistaken click should be recoverable
+    /// the same way Finder's own Delete is. Errors are non-fatal: even if
+    /// the file's already gone or the move fails (permissions, a folder
+    /// that went offline), the book still comes out of the library, since
+    /// the user asked for the book gone either way.
+    @discardableResult
+    func deleteFile(for book: Book) -> Bool {
+        var success = true
+
+        if FileManager.default.fileExists(atPath: book.sourcePath) {
+            do {
+                try FileManager.default.trashItem(at: book.sourceURL, resultingItemURL: nil)
+            } catch {
+                print("LibraryStore: failed to trash source file: \(error)")
+                success = false
+            }
+        }
+
+        if let coverURL = book.coverImageURL {
+            try? FileManager.default.removeItem(at: coverURL)
+        }
+        if let textURL = book.extractedTextURL {
+            try? FileManager.default.removeItem(at: textURL)
+        }
+
+        remove(book)
+        return success
+    }
+
     /// Remove an already-imported book and permanently exclude it from future imports.
     func removeAndExclude(_ book: Book) {
         // Create a dismissed classification so it never comes back
