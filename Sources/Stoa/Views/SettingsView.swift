@@ -12,8 +12,10 @@ import AppKit
 /// section, which is what made it read as templated rather than native.
 struct SettingsView: View {
     @EnvironmentObject private var scanner: ScannerService
+    @EnvironmentObject private var library: LibraryStore
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
+    @State private var relocateError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -77,6 +79,8 @@ struct SettingsView: View {
                         .padding(.vertical, 9)
                         .padding(.horizontal, DesignTokens.Spacing.md)
                     }
+
+                    libraryLocationGroup
 
                     footer
                 }
@@ -251,9 +255,99 @@ struct SettingsView: View {
             NotificationCenter.default.post(name: .stoaRequestFullRescan, object: nil)
         }
     }
+
+    // MARK: - Library Location
+    //
+    // Where cover art, cached search text, and downloaded books live —
+    // separate from the "watched folders" above, which are where Stoa
+    // looks for books to import. Pointing this at an iCloud Drive or
+    // Google Drive folder lets those extras sync across Macs the way the
+    // original plan intended, without any account integration — Finder
+    // is already watching that folder. The book list itself (titles,
+    // tags, shelves, bookmarks, progress) isn't part of this folder and
+    // stays on this Mac.
+
+    private var libraryLocationGroup: some View {
+        group(label: "Library Location") {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text(library.libraryFolder.path)
+                        .font(DesignTokens.sansFont(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, DesignTokens.Spacing.md)
+                .padding(.top, 9)
+                .padding(.bottom, 6)
+
+                Text("Cover art, cached search text, and downloaded books live here — point it at a synced folder to carry them across Macs. Your book list, tags, and progress stay on this Mac.")
+                    .font(DesignTokens.sansFont(size: 11.5))
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, DesignTokens.Spacing.md)
+                    .padding(.bottom, 9)
+
+                if let relocateError {
+                    Text(relocateError)
+                        .font(DesignTokens.sansFont(size: 11.5))
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, DesignTokens.Spacing.md)
+                        .padding(.bottom, 9)
+                }
+
+                HStack(spacing: DesignTokens.Spacing.sm) {
+                    Button("Choose Folder…") {
+                        chooseLibraryFolder()
+                    }
+                    .font(DesignTokens.sansFont(size: 12.5))
+
+                    if LibraryLocation.isCustom {
+                        Button("Reset to Default") {
+                            resetLibraryFolder()
+                        }
+                        .font(DesignTokens.sansFont(size: 12.5))
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, DesignTokens.Spacing.md)
+                .padding(.bottom, 9)
+            }
+        }
+    }
+
+    private func chooseLibraryFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        do {
+            try library.relocateLibrary(to: url)
+            relocateError = nil
+        } catch {
+            relocateError = "Couldn't move the library there: \(error.localizedDescription)"
+        }
+    }
+
+    private func resetLibraryFolder() {
+        do {
+            try library.relocateLibrary(to: LibraryLocation.defaultFolder)
+            LibraryLocation.resetToDefault()
+            relocateError = nil
+        } catch {
+            relocateError = "Couldn't move the library back: \(error.localizedDescription)"
+        }
+    }
 }
 
 #Preview {
     SettingsView()
         .environmentObject(ScannerService())
+        .environmentObject(LibraryStore())
 }

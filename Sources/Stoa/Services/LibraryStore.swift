@@ -34,15 +34,16 @@ final class LibraryStore: ObservableObject {
     let modelContainer: ModelContainer
     private var modelContext: ModelContext
 
-    /// The library folder where cover images (and eventually source files) are stored.
-    /// Default: ~/Documents/StoaLibrary
-    let libraryFolder: URL
+    /// The library folder where cover images, cached search text, and
+    /// downloaded books are stored. Defaults to ~/Documents/StoaLibrary,
+    /// but is user-configurable in Settings via LibraryLocation — see
+    /// relocateLibrary(to:) for moving it.
+    @Published private(set) var libraryFolder: URL
 
     // MARK: - Init
 
     init() {
-        let folder = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("StoaLibrary", isDirectory: true)
+        let folder = LibraryLocation.folder
         self.libraryFolder = folder
 
         // Create the library folder if it doesn't exist
@@ -66,6 +67,45 @@ final class LibraryStore: ObservableObject {
         loadBookmarks()
         buildSearchIndexIfNeeded()
         SpotlightIndexer.reindex(books)
+    }
+
+    // MARK: - Library Location
+    //
+    // Moves Covers/SearchIndex/Downloads to a new folder (e.g. inside
+    // iCloud Drive or Google Drive) and repairs every already-imported
+    // book's coverImagePath/extractedTextPath so existing cover art and
+    // cached search text keep working from the new location, instead of
+    // silently going stale. Deliberately does not touch the SwiftData
+    // store itself — see LibraryLocation's doc comment for why.
+
+    enum RelocateError: Error {
+        case notADirectory
+    }
+
+    func relocateLibrary(to newFolder: URL) throws {
+        var isDir: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: newFolder.path, isDirectory: &isDir)
+        if exists, !isDir.boolValue {
+            throw RelocateError.notADirectory
+        }
+
+        let oldFolder = libraryFolder
+        try LibraryLocation.relocate(to: newFolder)
+        libraryFolder = LibraryLocation.folder
+
+        let oldPrefix = oldFolder.path
+        let newPrefix = libraryFolder.path
+        guard oldPrefix != newPrefix else { return }
+
+        for book in books {
+            if let coverPath = book.coverImagePath, coverPath.hasPrefix(oldPrefix) {
+                book.coverImagePath = newPrefix + coverPath.dropFirst(oldPrefix.count)
+            }
+            if let textPath = book.extractedTextPath, textPath.hasPrefix(oldPrefix) {
+                book.extractedTextPath = newPrefix + textPath.dropFirst(oldPrefix.count)
+            }
+        }
+        try? modelContext.save()
     }
 
     // MARK: - Classifications
@@ -136,6 +176,29 @@ final class LibraryStore: ObservableObject {
     /// Look up an existing classification by content hash.
     func classification(for hash: String) -> BookClassification? {
         classifications.first { $0.fileHash == hash }
+    }
+
+    /// Whether a book belongs on the hero rail (Continue Reading, Recently
+    /// Added, Discover), not just in the library. EPUB/CBZ never go
+    /// through BookClassifier and are always eligible — there's no signal
+    /// against them. A PDF that just cleared the 0.7 auto-add bar can
+    /// still be a stray document (a long spec, a dense report) rather
+    /// than a real book, so hero placement holds PDFs to a stricter bar
+    /// than "good enough to keep in the library." A book someone
+    /// explicitly confirmed out of the Needs Review tray is always
+    /// eligible — that's a real decision, not a heuristic guess.
+    func isHeroEligible(_ book: Book) -> Bool {
+        guard let classification = classification(for: book.contentHash) else { return true }
+        switch classification.decision {
+        case .userConfirmed:
+            return true
+        case .autoAdded:
+            return classification.score >= 0.8
+        case .needsReview, .autoSkipped, .userDismissed:
+            // Shouldn't happen — these decisions never reach the library —
+            // but err toward showing rather than hiding if it somehow does.
+            return true
+        }
     }
 
     /// Record a classification decision (auto-added, needs review, auto-skipped).

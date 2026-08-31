@@ -176,8 +176,7 @@ enum InternetArchiveService {
     }
 
     private static func downloadsDirectory() throws -> URL {
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let folder = documents.appendingPathComponent("StoaLibrary/Downloads", isDirectory: true)
+        let folder = LibraryLocation.folder.appendingPathComponent("Downloads", isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
     }

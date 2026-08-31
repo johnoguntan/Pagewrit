@@ -190,7 +190,9 @@ struct ContentView: View {
     /// *oldest* book, which is why Recently Added kept showing an old PDF
     /// instead of whatever was just added.
     private var mostRecentBook: Book? {
-        library.books.max { $0.addedAt < $1.addedAt }
+        library.books
+            .filter { library.isHeroEligible($0) }
+            .max { $0.addedAt < $1.addedAt }
     }
 
     /// The book to resume, if anything is in progress.
@@ -214,7 +216,11 @@ struct ContentView: View {
     /// the same index, and therefore the same book.
     private func discoverBook(excluding shownHashes: Set<String>) -> Book? {
         let eligible = library.books
-            .filter { !shownHashes.contains($0.contentHash) && ($0.readingProgress ?? 0) == 0 }
+            .filter {
+                !shownHashes.contains($0.contentHash)
+                    && ($0.readingProgress ?? 0) == 0
+                    && library.isHeroEligible($0)
+            }
             .sorted { $0.contentHash < $1.contentHash }
         guard !eligible.isEmpty else { return nil }
 
