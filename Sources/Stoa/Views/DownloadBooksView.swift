@@ -328,14 +328,19 @@ struct DownloadBooksView: View {
         downloadStates[result.id] = .downloading
         Task {
             do {
+                let destination: URL
                 switch result.backing {
                 case .gutenberg(let source):
-                    try await GutenbergService.download(source)
+                    destination = try await GutenbergService.download(source)
                 case .internetArchive(let source):
-                    try await InternetArchiveService.download(source)
+                    destination = try await InternetArchiveService.download(source)
                 }
                 downloadStates[result.id] = .done
-                NotificationCenter.default.post(name: .stoaBooksDownloaded, object: nil)
+                // Pass the file's own URL along so ContentView imports
+                // just this one book instead of rescanning every watched
+                // folder -- dropping it here would silently defeat that
+                // optimization on every download.
+                NotificationCenter.default.post(name: .stoaBooksDownloaded, object: destination)
             } catch InternetArchiveService.ServiceError.noOpenFileAvailable {
                 downloadStates[result.id] = .unavailable("Lending only \u{2014} not downloadable")
             } catch {
