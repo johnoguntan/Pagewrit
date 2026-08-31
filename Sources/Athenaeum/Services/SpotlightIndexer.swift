@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 /// Indexes the library into macOS Spotlight, so books turn up in system
 /// search by title, author, or tag. Each item's uniqueIdentifier is the
 /// book's contentHash — stable across rescans, and how a Spotlight tap
-/// gets routed back to the right book (see StoaApp's continue-userActivity
+/// gets routed back to the right book (see AthenaeumApp's continue-userActivity
 /// handling).
 enum SpotlightIndexer {
     static func reindex(_ books: [Book]) {
@@ -19,7 +19,7 @@ enum SpotlightIndexer {
 
             let item = CSSearchableItem(
                 uniqueIdentifier: book.contentHash,
-                domainIdentifier: "com.sam.stoa.books",
+                domainIdentifier: "com.sam.athenaeum.books",
                 attributeSet: attributeSet
             )
             item.expirationDate = .distantFuture

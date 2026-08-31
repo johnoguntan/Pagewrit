@@ -3,7 +3,7 @@ import Foundation
 /// Searches and downloads public-domain books from Project Gutenberg, via
 /// the free Gutendex API (gutendex.com) — no API key, no account. Every
 /// title Gutenberg distributes has already cleared US copyright, so this
-/// is the one book source Stoa reaches out to on its own; there's no
+/// is the one book source Athenaeum reaches out to on its own; there's no
 /// general-purpose "download books from the internet" beyond it.
 enum GutenbergService {
     struct SearchResult: Identifiable, Decodable {
@@ -62,7 +62,7 @@ enum GutenbergService {
         return try JSONDecoder().decode(SearchResponse.self, from: data).results
     }
 
-    /// Downloads the EPUB straight into ~/Documents/StoaLibrary/Downloads.
+    /// Downloads the EPUB straight into ~/Documents/AthenaeumLibrary/Downloads.
     /// That's inside Documents, one of the folders ScannerService already
     /// walks automatically — no separate "watched folder" bookkeeping
     /// needed, the next rescan just finds it.

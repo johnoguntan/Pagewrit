@@ -1,5 +1,5 @@
 import XCTest
-@testable import Stoa
+@testable import Athenaeum
 
 final class DuplicateDetectorTests: XCTestCase {
     private func makeBook(

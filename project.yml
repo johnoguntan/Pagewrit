@@ -1,6 +1,6 @@
-name: Stoa
+name: Athenaeum
 options:
-  bundleIdPrefix: com.sam.stoa
+  bundleIdPrefix: com.sam.athenaeum
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
@@ -9,7 +9,7 @@ settings:
     SWIFT_VERSION: "5.9"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     # Hardened Runtime is required for notarization (Product > Archive >
-    # Distribute App > Direct Distribution). Nothing in Stoa needs an
+    # Distribute App > Direct Distribution). Nothing in Athenaeum needs an
     # exception entitlement for it — no JIT, no unsigned dylibs, no
     # debugging hooks — so this can just be on.
     ENABLE_HARDENED_RUNTIME: YES
@@ -22,25 +22,25 @@ packages:
     url: https://github.com/weichsel/ZIPFoundation
     from: "0.9.19"
 targets:
-  Stoa:
+  Athenaeum:
     type: application
     platform: macOS
     sources:
-      - path: Sources/Stoa
+      - path: Sources/Athenaeum
     info:
-      path: Sources/Stoa/App/Info.plist
+      path: Sources/Athenaeum/App/Info.plist
       properties:
-        CFBundleDisplayName: Stoa
+        CFBundleDisplayName: Athenaeum
         CFBundleIconName: AppIcon2
         CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "1"
         LSApplicationCategoryType: public.app-category.productivity
         LSMinimumSystemVersion: "14.0"
         NSHumanReadableCopyright: "© 2026"
-        NSDocumentsFolderUsageDescription: "Stoa scans your Documents folder to find EPUB, PDF, and CBZ books to add to your library."
-        NSDesktopFolderUsageDescription: "Stoa scans your Desktop folder to find EPUB, PDF, and CBZ books to add to your library."
-        NSDownloadsFolderUsageDescription: "Stoa scans your Downloads folder to find EPUB, PDF, and CBZ books to add to your library."
-        NSRemovableVolumesUsageDescription: "Stoa can look for books on connected drives you choose to add."
+        NSDocumentsFolderUsageDescription: "Athenaeum scans your Documents folder to find EPUB, PDF, and CBZ books to add to your library."
+        NSDesktopFolderUsageDescription: "Athenaeum scans your Desktop folder to find EPUB, PDF, and CBZ books to add to your library."
+        NSDownloadsFolderUsageDescription: "Athenaeum scans your Downloads folder to find EPUB, PDF, and CBZ books to add to your library."
+        NSRemovableVolumesUsageDescription: "Athenaeum can look for books on connected drives you choose to add."
         ITSAppUsesNonExemptEncryption: false
     settings:
       base:
@@ -48,7 +48,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon2
     entitlements:
-      path: Sources/Stoa/App/Stoa.entitlements
+      path: Sources/Athenaeum/App/Athenaeum.entitlements
       properties:
         com.apple.security.app-sandbox: false
     dependencies:
@@ -56,17 +56,17 @@ targets:
       - package: ZIPFoundation
     scheme:
       testTargets:
-        - StoaTests
+        - AthenaeumTests
       gatherCoverageData: false
 
-  StoaTests:
+  AthenaeumTests:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - path: Tests/StoaTests
+      - path: Tests/AthenaeumTests
     settings:
       base:
         SWIFT_VERSION: "5.9"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
     dependencies:
-      - target: Stoa
+      - target: Athenaeum
