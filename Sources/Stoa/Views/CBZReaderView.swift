@@ -103,6 +103,7 @@ struct CBZReaderView: View {
             }
             .buttonStyle(.plain)
             .help("Reading direction \u{2014} switch for manga/right-to-left comics")
+            .accessibilityLabel("Reading direction \u{2014} switch for manga/right-to-left comics")
 
             bookmarkButton
 
@@ -258,6 +259,7 @@ struct CBZReaderView: View {
         .buttonStyle(.plain)
         .disabled(pagePaths.isEmpty)
         .help(isCurrentPageBookmarked ? "Remove bookmark" : "Bookmark this page \u{2014} or hold to browse bookmarks")
+        .accessibilityLabel(isCurrentPageBookmarked ? "Remove bookmark" : "Bookmark this page \u{2014} or hold to browse bookmarks")
         .contextMenu {
             Button("Browse Bookmarks") { showBookmarks = true }
         }

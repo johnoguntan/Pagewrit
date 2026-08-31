@@ -143,6 +143,7 @@ struct EPUBReaderView: View {
         .buttonStyle(.plain)
         .disabled(tocEntries.isEmpty)
         .help("Table of contents")
+        .accessibilityLabel("Table of contents")
         .padding(.trailing, DesignTokens.Spacing.xs)
         .popover(isPresented: $showTOC, arrowEdge: .bottom) {
             tocList
@@ -215,6 +216,7 @@ struct EPUBReaderView: View {
         .buttonStyle(.plain)
         .disabled(chapterURLs.isEmpty)
         .help(isCurrentChapterBookmarked ? "Remove bookmark" : "Bookmark this chapter \u{2014} or hold to browse bookmarks")
+        .accessibilityLabel(isCurrentChapterBookmarked ? "Remove bookmark" : "Bookmark this chapter \u{2014} or hold to browse bookmarks")
         .contextMenu {
             Button("Browse Bookmarks") { showBookmarks = true }
         }
@@ -320,6 +322,7 @@ struct EPUBReaderView: View {
         .buttonStyle(.plain)
         .disabled(chapterURLs.isEmpty)
         .help("Search this book")
+        .accessibilityLabel("Search this book")
         .padding(.trailing, DesignTokens.Spacing.xs)
     }
 
@@ -455,6 +458,7 @@ struct EPUBReaderView: View {
             .foregroundStyle(readerTheme.secondaryTextColor ?? .secondary)
             .disabled(fontScale <= fontScaleRange.lowerBound)
             .help("Smaller text")
+            .accessibilityLabel("Smaller text")
 
             Button {
                 fontScale = min(fontScaleRange.upperBound, fontScale + fontScaleStep)
@@ -466,6 +470,7 @@ struct EPUBReaderView: View {
             .foregroundStyle(readerTheme.secondaryTextColor ?? .secondary)
             .disabled(fontScale >= fontScaleRange.upperBound)
             .help("Larger text")
+            .accessibilityLabel("Larger text")
         }
         .padding(.trailing, DesignTokens.Spacing.xs)
     }
@@ -493,6 +498,7 @@ struct EPUBReaderView: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help("Reading theme")
+        .accessibilityLabel("Reading theme")
         .padding(.trailing, DesignTokens.Spacing.xs)
     }
 
@@ -513,6 +519,7 @@ struct EPUBReaderView: View {
         .buttonStyle(.plain)
         .disabled(chapterURLs.isEmpty)
         .help(speech.isSpeaking ? "Stop reading aloud" : "Read this chapter aloud")
+        .accessibilityLabel(speech.isSpeaking ? "Stop reading aloud" : "Read this chapter aloud")
         .padding(.trailing, DesignTokens.Spacing.xs)
     }
 

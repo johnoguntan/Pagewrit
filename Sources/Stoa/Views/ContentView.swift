@@ -679,10 +679,11 @@ struct ContentView: View {
         iconColor: Color? = nil,
         badge: String? = nil
     ) -> some View {
-        SidebarRow(
+        let isSelected = sidebarSelection == selection
+        return SidebarRow(
             title: title,
             icon: icon,
-            isSelected: sidebarSelection == selection,
+            isSelected: isSelected,
             iconColor: iconColor,
             badge: badge
         )
@@ -690,6 +691,12 @@ struct ContentView: View {
         .onTapGesture {
             sidebarSelection = selection
         }
+        // The sidebar is hand-built (not List(.sidebar)), so none of the
+        // selection/activation semantics VoiceOver gets from a native
+        // List row come for free -- spelled out explicitly here instead.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(badge.map { "\(title), \($0)" } ?? title)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 
     // MARK: - Sidebar App Mark
@@ -1321,6 +1328,10 @@ struct BookCoverTile: View {
         } message: {
             Text("This moves the file itself to the Trash, not just Stoa's library entry. This can't be undone from inside Stoa.")
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(book.title)\(secondaryLine.isEmpty ? "" : ", \(secondaryLine)")")
+        .accessibilityHint("Double-click to read")
+        .accessibilityAddTraits(.isButton)
     }
 }
 

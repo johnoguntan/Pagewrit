@@ -172,6 +172,7 @@ struct PDFReaderView: View {
         .buttonStyle(.plain)
         .disabled(outline.isEmpty)
         .help("Table of contents")
+        .accessibilityLabel("Table of contents")
         .popover(isPresented: $showOutline, arrowEdge: .bottom) {
             outlineList
         }
@@ -226,6 +227,7 @@ struct PDFReaderView: View {
             .buttonStyle(.plain)
             .foregroundStyle(readerTheme.secondaryTextColor ?? .secondary)
             .help("Zoom out")
+            .accessibilityLabel("Zoom out")
 
             Button {
                 scaleFactor = fitScaleFactor
@@ -236,6 +238,7 @@ struct PDFReaderView: View {
             .buttonStyle(.plain)
             .foregroundStyle(readerTheme.secondaryTextColor ?? .secondary)
             .help("Fit page to window")
+            .accessibilityLabel("Fit page to window")
 
             Button {
                 scaleFactor = min(scaleFactor * 1.15, fitScaleFactor * 4)
@@ -246,6 +249,7 @@ struct PDFReaderView: View {
             .buttonStyle(.plain)
             .foregroundStyle(readerTheme.secondaryTextColor ?? .secondary)
             .help("Zoom in")
+            .accessibilityLabel("Zoom in")
         }
         .padding(.trailing, DesignTokens.Spacing.xs)
     }
@@ -273,6 +277,7 @@ struct PDFReaderView: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help("Reading theme")
+        .accessibilityLabel("Reading theme")
         .padding(.trailing, DesignTokens.Spacing.xs)
     }
 
@@ -304,6 +309,7 @@ struct PDFReaderView: View {
         }
         .buttonStyle(.plain)
         .help(isCurrentPageBookmarked ? "Remove bookmark" : "Bookmark this page \u{2014} or hold to browse bookmarks")
+        .accessibilityLabel(isCurrentPageBookmarked ? "Remove bookmark" : "Bookmark this page \u{2014} or hold to browse bookmarks")
         .contextMenu {
             Button("Browse Bookmarks") { showBookmarks = true }
         }
@@ -396,6 +402,7 @@ struct PDFReaderView: View {
         }
         .buttonStyle(.plain)
         .help("Search this document")
+        .accessibilityLabel("Search this document")
         .padding(.trailing, DesignTokens.Spacing.xs)
     }
 
