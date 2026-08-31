@@ -32,11 +32,11 @@ targets:
       properties:
         CFBundleDisplayName: Stoa
         CFBundleIconName: AppIcon2
-        CFBundleShortVersionString: "0.1.0"
+        CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "1"
         LSApplicationCategoryType: public.app-category.productivity
         LSMinimumSystemVersion: "14.0"
-        NSHumanReadableCopyright: "Personal use"
+        NSHumanReadableCopyright: "© 2026"
         NSDocumentsFolderUsageDescription: "Stoa scans your Documents folder to find EPUB, PDF, and CBZ books to add to your library."
         NSDesktopFolderUsageDescription: "Stoa scans your Desktop folder to find EPUB, PDF, and CBZ books to add to your library."
         NSDownloadsFolderUsageDescription: "Stoa scans your Downloads folder to find EPUB, PDF, and CBZ books to add to your library."
