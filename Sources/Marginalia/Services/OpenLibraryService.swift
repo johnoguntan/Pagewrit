@@ -4,8 +4,8 @@ import Foundation
 /// Search API (openlibrary.org) — free, no API key, no account. This is
 /// the fix for books whose only metadata is a scanned filename (a raw
 /// slug like "teuxdeux_phase1_spec" or a CV with no real title at all):
-/// the user searches by whatever title/author Athenaeum already has, picks
-/// the right match from Open Library's catalog, and Athenaeum replaces the
+/// the user searches by whatever title/author Marginalia already has, picks
+/// the right match from Open Library's catalog, and Marginalia replaces the
 /// title, author, and cover with that record's.
 enum OpenLibraryService {
     struct SearchResult: Identifiable {

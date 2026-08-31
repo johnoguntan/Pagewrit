@@ -123,7 +123,7 @@ enum InternetArchiveService {
         guard !restricted else { throw ServiceError.noOpenFileAvailable }
 
         // Prefer EPUB; fall back to a plain (non-encrypted) PDF, which
-        // Athenaeum's PDF reader already handles.
+        // Marginalia's PDF reader already handles.
         let epub = decoded.files.first { $0.format == "EPUB" }
         let pdf = decoded.files.first { file in
             guard let format = file.format else { return false }
@@ -142,7 +142,7 @@ enum InternetArchiveService {
 
     // MARK: - Download
 
-    /// Downloads straight into ~/Documents/AthenaeumLibrary/Downloads, same as
+    /// Downloads straight into ~/Documents/MarginaliaLibrary/Downloads, same as
     /// GutenbergService — inside Documents, one of the folders
     /// ScannerService already walks automatically.
     @discardableResult

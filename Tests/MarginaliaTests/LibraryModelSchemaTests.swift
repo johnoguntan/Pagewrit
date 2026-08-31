@@ -1,6 +1,6 @@
 import XCTest
 import SwiftData
-@testable import Athenaeum
+@testable import Marginalia
 
 /// A lightweight round-trip smoke test for the SwiftData schema: insert
 /// one of every @Model type, save, then fetch each back. This is not a

@@ -1,10 +1,10 @@
 import Foundation
 
-/// Single source of truth for where Athenaeum's on-disk library extras —
+/// Single source of truth for where Marginalia's on-disk library extras —
 /// cover images, cached full-text search index, and downloaded books —
-/// live. Defaults to `~/Documents/AthenaeumLibrary`, but the user can point it
+/// live. Defaults to `~/Documents/MarginaliaLibrary`, but the user can point it
 /// at any folder from Settings, typically one already synced by iCloud
-/// Drive or Google Drive: Athenaeum doesn't integrate with either service
+/// Drive or Google Drive: Marginalia doesn't integrate with either service
 /// directly, it just relies on Finder already watching that folder, per
 /// the original plan.
 ///
@@ -32,7 +32,7 @@ enum LibraryLocation {
 
     static var defaultFolder: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("AthenaeumLibrary", isDirectory: true)
+            .appendingPathComponent("MarginaliaLibrary", isDirectory: true)
     }
 
     /// True once the user has pointed the library somewhere other than the default.
@@ -65,7 +65,7 @@ enum LibraryLocation {
         UserDefaults.standard.set(newFolder.path, forKey: defaultsKey)
     }
 
-    /// Points back at the default `~/Documents/AthenaeumLibrary` location.
+    /// Points back at the default `~/Documents/MarginaliaLibrary` location.
     /// Does not move files back — the custom folder's contents are left
     /// in place, since the user may still want them there.
     static func resetToDefault() {

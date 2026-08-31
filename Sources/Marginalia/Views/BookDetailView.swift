@@ -41,7 +41,7 @@ struct BookDetailView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This moves the file itself to the Trash, not just Athenaeum's library entry. This can't be undone from inside Athenaeum.")
+            Text("This moves the file itself to the Trash, not just Marginalia's library entry. This can't be undone from inside Marginalia.")
         }
     }
 

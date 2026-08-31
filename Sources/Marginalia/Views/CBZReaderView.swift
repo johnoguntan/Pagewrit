@@ -33,7 +33,7 @@ struct CBZReaderView: View {
     @AppStorage("stoa.cbzRightToLeft") private var rightToLeft = false
     @State private var showBookmarks = false
 
-    private let extractionQueue = DispatchQueue(label: "com.sam.athenaeum.cbz-extraction")
+    private let extractionQueue = DispatchQueue(label: "com.sam.marginalia.cbz-extraction")
 
     var body: some View {
         VStack(spacing: 0) {

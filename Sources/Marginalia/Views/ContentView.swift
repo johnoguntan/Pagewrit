@@ -583,7 +583,7 @@ struct ContentView: View {
     //
     // Built as a plain ScrollView/VStack rather than List(.sidebar): List's
     // implicit AppKit row insets don't line up with a custom safeAreaInset
-    // header, which left the "Athenaeum" mark, section labels, and row icons all
+    // header, which left the "Marginalia" mark, section labels, and row icons all
     // starting at very slightly different x-positions. Composing the inset
     // ourselves (outerMargin + rowContentInset, both applied consistently
     // below) guarantees the app mark, section labels, and every row icon
@@ -715,7 +715,7 @@ struct ContentView: View {
                     cornerRadius: DesignTokens.Sidebar.AppMark.cornerRadius
                 ))
 
-            Text("Athenaeum")
+            Text("Marginalia")
                 .font(DesignTokens.serifFont(
                     size: DesignTokens.Sidebar.AppMark.titleSize,
                     weight: .semibold
@@ -1326,7 +1326,7 @@ struct BookCoverTile: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This moves the file itself to the Trash, not just Athenaeum's library entry. This can't be undone from inside Athenaeum.")
+            Text("This moves the file itself to the Trash, not just Marginalia's library entry. This can't be undone from inside Marginalia.")
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(book.title)\(secondaryLine.isEmpty ? "" : ", \(secondaryLine)")")
