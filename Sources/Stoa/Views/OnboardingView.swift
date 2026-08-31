@@ -3,7 +3,7 @@ import SwiftUI
 /// A short, one-time welcome screen shown before the very first scan.
 /// Stoa isn't sandboxed, so the first time it actually reads Documents,
 /// Desktop, or Downloads, macOS shows its own native "Stoa would like to
-/// access files in your X folder" prompt for each one — up to three in a
+/// access files in your X folder" prompt for each one \u{2014} up to three in a
 /// row, completely unexplained, right at cold launch, if nothing here
 /// told the person what's about to happen and why. This screen exists
 /// only to give that context before those dialogs fire.
@@ -35,11 +35,11 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
                 onboardingPoint(
                     icon: "checkmark.shield",
-                    text: "macOS will ask for permission to each folder separately, right after this \u2014 that's expected, just click Allow."
+                    text: "macOS will ask for permission to each folder separately, right after this \u{2014} that's expected, just click Allow."
                 )
                 onboardingPoint(
                     icon: "doc.on.doc",
-                    text: "Your files stay exactly where they are \u2014 Stoa only reads them, it never moves or copies the originals."
+                    text: "Your files stay exactly where they are \u{2014} Stoa only reads them, it never moves or copies the originals."
                 )
                 onboardingPoint(
                     icon: "folder.badge.plus",
