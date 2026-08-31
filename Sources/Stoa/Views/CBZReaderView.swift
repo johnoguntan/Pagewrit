@@ -343,7 +343,7 @@ struct CBZReaderView: View {
 
     private func openArchive() {
         #if canImport(ZIPFoundation)
-        guard let archive = try? Archive(url: book.sourceURL, accessMode: .read) else {
+        guard let archive = try? Archive(url: book.sourceURL, accessMode: .read, pathEncoding: nil) else {
             loadFailed = true
             isLoading = false
             return
