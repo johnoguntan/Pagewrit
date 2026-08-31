@@ -55,5 +55,18 @@ targets:
       - package: EPUBKit
       - package: ZIPFoundation
     scheme:
-      testTargets: []
+      testTargets:
+        - StoaTests
       gatherCoverageData: false
+
+  StoaTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/StoaTests
+    settings:
+      base:
+        SWIFT_VERSION: "5.9"
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+    dependencies:
+      - target: Stoa
