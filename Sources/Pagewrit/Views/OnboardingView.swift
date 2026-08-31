@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// A short, one-time welcome screen shown before the very first scan.
-/// Marginalia isn't sandboxed, so the first time it actually reads Documents,
-/// Desktop, or Downloads, macOS shows its own native "Marginalia would like to
+/// Pagewrit isn't sandboxed, so the first time it actually reads Documents,
+/// Desktop, or Downloads, macOS shows its own native "Pagewrit would like to
 /// access files in your X folder" prompt for each one \u{2014} up to three in a
 /// row, completely unexplained, right at cold launch, if nothing here
 /// told the person what's about to happen and why. This screen exists
@@ -20,11 +20,11 @@ struct OnboardingView: View {
                 .foregroundStyle(DesignTokens.accent)
 
             VStack(spacing: DesignTokens.Spacing.sm) {
-                Text("Welcome to Marginalia")
+                Text("Welcome to Pagewrit")
                     .font(DesignTokens.serifFont(size: 22, weight: .semibold))
                     .foregroundStyle(.primary)
 
-                Text("Marginalia looks in your Documents, Desktop, and Downloads folders for EPUB, PDF, and CBZ books, and brings them into one library with a built-in reader.")
+                Text("Pagewrit looks in your Documents, Desktop, and Downloads folders for EPUB, PDF, and CBZ books, and brings them into one library with a built-in reader.")
                     .font(DesignTokens.sansFont(size: 13.5))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -39,7 +39,7 @@ struct OnboardingView: View {
                 )
                 onboardingPoint(
                     icon: "doc.on.doc",
-                    text: "Your files stay exactly where they are \u{2014} Marginalia only reads them, it never moves or copies the originals."
+                    text: "Your files stay exactly where they are \u{2014} Pagewrit only reads them, it never moves or copies the originals."
                 )
                 onboardingPoint(
                     icon: "folder.badge.plus",

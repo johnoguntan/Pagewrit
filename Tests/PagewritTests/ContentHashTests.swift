@@ -1,5 +1,5 @@
 import XCTest
-@testable import Marginalia
+@testable import Pagewrit
 
 final class ContentHashTests: XCTestCase {
     /// Guards the one property dedup depends on: identical bytes hash
@@ -12,7 +12,7 @@ final class ContentHashTests: XCTestCase {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let contents = Data("Marginalia test fixture -- identical content".utf8)
+        let contents = Data("Pagewrit test fixture -- identical content".utf8)
         let fileA = dir.appendingPathComponent("a.epub")
         let fileB = dir.appendingPathComponent("b.epub")
         try contents.write(to: fileA)

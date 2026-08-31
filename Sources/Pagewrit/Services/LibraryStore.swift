@@ -8,7 +8,7 @@ import AppKit
 /// truth for "what's in the library" — the UI reads from `books`,
 /// not from the scanner's raw file list.
 ///
-/// Library folder defaults to `~/Documents/MarginaliaLibrary`. Phase 4
+/// Library folder defaults to `~/Documents/PagewritLibrary`. Phase 4
 /// will make this configurable (iCloud Drive / Google Drive); the
 /// path is isolated behind one property so that's a small change.
 @MainActor
@@ -35,7 +35,7 @@ final class LibraryStore: ObservableObject {
     private var modelContext: ModelContext
 
     /// The library folder where cover images, cached search text, and
-    /// downloaded books are stored. Defaults to ~/Documents/MarginaliaLibrary,
+    /// downloaded books are stored. Defaults to ~/Documents/PagewritLibrary,
     /// but is user-configurable in Settings via LibraryLocation — see
     /// relocateLibrary(to:) for moving it.
     @Published private(set) var libraryFolder: URL
@@ -252,12 +252,12 @@ final class LibraryStore: ObservableObject {
 
     /// Moves the book's underlying source file to the Trash (plus its
     /// cached cover and extracted-text sidecar files, which are deleted
-    /// outright — they're Marginalia's own derived data, not something worth
+    /// outright — they're Pagewrit's own derived data, not something worth
     /// recovering), then removes it from the library. Unlike
     /// removeAndExclude, this doesn't record a dismissed classification —
     /// there's nothing left on disk to re-discover on a future rescan.
     ///
-    /// Trash, not permanent delete: this reaches outside MarginaliaLibrary's own
+    /// Trash, not permanent delete: this reaches outside PagewritLibrary's own
     /// folder into wherever the user's Finder put the file (Documents, a
     /// watched folder, etc.), so a mistaken click should be recoverable
     /// the same way Finder's own Delete is. Errors are non-fatal: even if
@@ -405,7 +405,7 @@ final class LibraryStore: ObservableObject {
     }
 
     /// Apply a chosen Open Library match to a book: replace title/author,
-    /// and — if cover art came back with it — save it into MarginaliaLibrary's
+    /// and — if cover art came back with it — save it into PagewritLibrary's
     /// Covers folder and point the book at it. Any of the three can be nil
     /// (a lookup with no cover art still lets the user fix just the title).
     func applyMetadata(to book: Book, title: String?, author: String?, coverData: Data?) {
@@ -421,7 +421,7 @@ final class LibraryStore: ObservableObject {
         try? modelContext.save()
     }
 
-    /// Save raw cover image data to MarginaliaLibrary/Covers/<hash>.jpg — mirrors
+    /// Save raw cover image data to PagewritLibrary/Covers/<hash>.jpg — mirrors
     /// ImportPipeline's own saveCoverImage, since a metadata-lookup cover
     /// needs the same on-disk convention as one found at import time.
     private func saveCoverImage(_ data: Data, contentHash: String) -> String? {

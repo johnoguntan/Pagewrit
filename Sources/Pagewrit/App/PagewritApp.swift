@@ -2,7 +2,7 @@ import SwiftUI
 import CoreSpotlight
 
 extension Notification.Name {
-    /// Posted when the user taps a Marginalia result in macOS Spotlight — carries
+    /// Posted when the user taps a Pagewrit result in macOS Spotlight — carries
     /// the tapped book's contentHash as the notification's object.
     static let stoaOpenBookFromSpotlight = Notification.Name("stoaOpenBookFromSpotlight")
 
@@ -41,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct MarginaliaApp: App {
+struct PagewritApp: App {
     @StateObject private var scanner = ScannerService()
     @StateObject private var library = LibraryStore()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate

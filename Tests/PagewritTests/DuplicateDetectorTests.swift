@@ -1,5 +1,5 @@
 import XCTest
-@testable import Marginalia
+@testable import Pagewrit
 
 final class DuplicateDetectorTests: XCTestCase {
     private func makeBook(

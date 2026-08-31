@@ -237,7 +237,7 @@ enum ImportPipeline {
 
     // MARK: - Cover image persistence
 
-    /// Save raw image data to MarginaliaLibrary/Covers/<hash>.jpg and return the
+    /// Save raw image data to PagewritLibrary/Covers/<hash>.jpg and return the
     /// relative path string to store in Book.coverImagePath.
     private static func saveCoverImage(
         _ data: Data,

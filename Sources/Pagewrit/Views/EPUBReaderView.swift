@@ -672,7 +672,7 @@ struct EPUBReaderView: View {
     // MARK: - Table of Contents Flattening
     //
     // EPUBKit's tableOfContents is a tree (NCX navMap) keyed by `item`, a
-    // src path that may carry a "#fragment" anchor. Marginalia's reader only
+    // src path that may carry a "#fragment" anchor. Pagewrit's reader only
     // navigates at chapter granularity, so each entry is resolved down to
     // the matching chapter's index by filename, ignoring any fragment \u{2014}
     // and dropped if it can't be matched to a real chapter document.

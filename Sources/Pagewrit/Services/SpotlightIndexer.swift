@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 /// Indexes the library into macOS Spotlight, so books turn up in system
 /// search by title, author, or tag. Each item's uniqueIdentifier is the
 /// book's contentHash — stable across rescans, and how a Spotlight tap
-/// gets routed back to the right book (see MarginaliaApp's continue-userActivity
+/// gets routed back to the right book (see PagewritApp's continue-userActivity
 /// handling).
 enum SpotlightIndexer {
     static func reindex(_ books: [Book]) {
@@ -19,7 +19,7 @@ enum SpotlightIndexer {
 
             let item = CSSearchableItem(
                 uniqueIdentifier: book.contentHash,
-                domainIdentifier: "com.sam.marginalia.books",
+                domainIdentifier: "com.sam.pagewrit.books",
                 attributeSet: attributeSet
             )
             item.expirationDate = .distantFuture

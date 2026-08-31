@@ -235,7 +235,7 @@ struct SettingsView: View {
     private var footer: some View {
         HStack {
             Spacer()
-            Text("Marginalia \u{00B7} 1.0.0")
+            Text("Pagewrit \u{00B7} 1.0.0")
                 .font(DesignTokens.serifFont(size: 11, weight: .regular))
                 .foregroundStyle(.quaternary)
             Spacer()
@@ -259,7 +259,7 @@ struct SettingsView: View {
     // MARK: - Library Location
     //
     // Where cover art, cached search text, and downloaded books live —
-    // separate from the "watched folders" above, which are where Marginalia
+    // separate from the "watched folders" above, which are where Pagewrit
     // looks for books to import. Pointing this at an iCloud Drive or
     // Google Drive folder lets those extras sync across Macs the way the
     // original plan intended, without any account integration — Finder
