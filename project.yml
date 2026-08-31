@@ -8,7 +8,11 @@ settings:
   base:
     SWIFT_VERSION: "5.9"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
-    ENABLE_HARDENED_RUNTIME: NO
+    # Hardened Runtime is required for notarization (Product > Archive >
+    # Distribute App > Direct Distribution). Nothing in Stoa needs an
+    # exception entitlement for it — no JIT, no unsigned dylibs, no
+    # debugging hooks — so this can just be on.
+    ENABLE_HARDENED_RUNTIME: YES
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon2
 packages:
   EPUBKit:
