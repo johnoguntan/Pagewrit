@@ -19,7 +19,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
@@ -35,7 +35,7 @@
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>Stoa scans your Downloads folder to find EPUB, PDF, and CBZ books to add to your library.</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Personal use</string>
+	<string>© 2026</string>
 	<key>NSRemovableVolumesUsageDescription</key>
 	<string>Stoa can look for books on connected drives you choose to add.</string>
 </dict>

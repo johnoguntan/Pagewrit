@@ -206,7 +206,7 @@ enum ImportPipeline {
         let title = file.url.deletingPathExtension().lastPathComponent
 
         #if canImport(ZIPFoundation)
-        guard let archive = Archive(url: file.url, accessMode: .read) else {
+        guard let archive = try? Archive(url: file.url, accessMode: .read) else {
             return ExtractionResult(title: title, author: nil, coverImagePath: nil)
         }
 
