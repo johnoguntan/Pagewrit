@@ -220,7 +220,7 @@ enum ImportPipeline {
         }) {
             var coverData = Data()
             do {
-                try archive.extract(coverEntry) { data in
+                _ = try archive.extract(coverEntry) { data in
                     coverData.append(data)
                 }
                 if !coverData.isEmpty, let savedPath = saveCoverImage(coverData, contentHash: contentHash, libraryFolder: libraryFolder) {

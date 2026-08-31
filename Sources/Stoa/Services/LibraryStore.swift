@@ -504,9 +504,10 @@ final class LibraryStore: ObservableObject {
                 results.append((candidate.hash, fileURL.path))
             }
             guard !results.isEmpty else { return }
+            let finalResults = results
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                for result in results {
+                for result in finalResults {
                     if let book = self.books.first(where: { $0.contentHash == result.hash }) {
                         book.extractedTextPath = result.path
                     }
@@ -543,8 +544,9 @@ final class LibraryStore: ObservableObject {
                 }
             }
             if Task.isCancelled { return }
+            let finalMatches = matches
             await MainActor.run { [weak self] in
-                self?.contentSearchMatchHashes = matches
+                self?.contentSearchMatchHashes = finalMatches
             }
         }
     }

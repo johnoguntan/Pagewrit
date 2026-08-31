@@ -88,7 +88,12 @@ final class ScannerService: ObservableObject {
 
                 guard let enumerator else { continue }
 
-                for case let fileURL as URL in enumerator {
+                // `for case ... in enumerator` (Sequence.makeIterator) is
+                // flagged unavailable from async contexts under Swift 6
+                // strict concurrency, since FileManager.DirectoryEnumerator
+                // is an NSEnumerator bridge. Drive it directly via
+                // nextObject() instead, which has no such restriction.
+                while let fileURL = enumerator.nextObject() as? URL {
                     guard !seenPaths.contains(fileURL.path) else { continue }
                     guard let format = BookFormat(fileExtension: fileURL.pathExtension) else { continue }
 
