@@ -69,6 +69,8 @@ struct ContentView: View {
     @State private var importTaskID: UUID?
     @AppStorage("stoa.gridDensity") private var gridDensityRaw: String = GridDensity.comfortable.rawValue
     @State private var showDownloadBooks = false
+    @AppStorage("stoa.hasSeenOnboarding") private var hasSeenOnboarding = false
+    @State private var showOnboarding = false
     @State private var navigationPath = NavigationPath()
 
     private var gridDensity: GridDensity {
@@ -344,8 +346,27 @@ struct ContentView: View {
         .tint(DesignTokens.accent)
         .background(DesignTokens.background.ignoresSafeArea())
         .task {
-            if library.books.isEmpty {
-                await rescanAndImport()
+            if hasSeenOnboarding {
+                if library.books.isEmpty {
+                    await rescanAndImport()
+                }
+            } else if !library.books.isEmpty {
+                // A library from before this screen existed — treat as
+                // already onboarded rather than showing it retroactively.
+                hasSeenOnboarding = true
+            } else {
+                showOnboarding = true
+            }
+        }
+        // The very first scan is what triggers macOS's native per-folder
+        // access prompts — deferred until this is dismissed so those
+        // dialogs land right after an explanation, not at cold launch.
+        .sheet(isPresented: $showOnboarding, onDismiss: {
+            Task { await rescanAndImport() }
+        }) {
+            OnboardingView {
+                hasSeenOnboarding = true
+                showOnboarding = false
             }
         }
         .sheet(isPresented: $library.showSettings) {
