@@ -20,13 +20,12 @@ enum DesignTokens {
 
     // MARK: - Colors
 
-    /// Verdigris — aged bronze-patina green, adapting for light/dark.
-    /// Landed here after two rounds: indigo-violet read as generic
-    /// "productivity app blue", and a terracotta/colonnade-illustration
-    /// combo was rejected outright (illustration style, subject, and color
-    /// all missed). This is flat and quiet rather than rendered/illustrated.
-    static let accent = Color(light: NSColor(red: 0.247, green: 0.490, blue: 0.420, alpha: 1),
-                             dark: NSColor(red: 0.435, green: 0.749, blue: 0.651, alpha: 1))
+    /// Deep, muted navy blue — matches the app icon's background color.
+    /// Replaced the earlier verdigris green so the in-app accent (sidebar
+    /// selection, buttons, links) reads as the same color family as the
+    /// icon rather than clashing with it.
+    static let accent = Color(light: NSColor(red: 0.176, green: 0.353, blue: 0.541, alpha: 1),
+                             dark: NSColor(red: 0.478, green: 0.671, blue: 0.863, alpha: 1))
 
     /// A warmer secondary accent (muted amber) reserved for small moments
     /// that shouldn't compete with the primary accent — currently unused,
