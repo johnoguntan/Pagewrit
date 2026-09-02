@@ -703,8 +703,9 @@ struct ContentView: View {
 
     private var sidebarAppMark: some View {
         HStack(spacing: DesignTokens.Spacing.xs) {
-            Image(systemName: "books.vertical.fill")
-                .font(.system(size: 14, weight: .semibold))
+            Image(systemName: "book.fill")
+                .symbolRenderingMode(.monochrome)
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(
                     width: DesignTokens.Sidebar.AppMark.size,
