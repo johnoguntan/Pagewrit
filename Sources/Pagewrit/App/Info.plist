@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Marginalia</string>
+	<string>Pagewrit</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIconName</key>
@@ -29,14 +29,14 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSDesktopFolderUsageDescription</key>
-	<string>Marginalia scans your Desktop folder to find EPUB, PDF, and CBZ books to add to your library.</string>
+	<string>Pagewrit scans your Desktop folder to find EPUB, PDF, and CBZ books to add to your library.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
-	<string>Marginalia scans your Documents folder to find EPUB, PDF, and CBZ books to add to your library.</string>
+	<string>Pagewrit scans your Documents folder to find EPUB, PDF, and CBZ books to add to your library.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
-	<string>Marginalia scans your Downloads folder to find EPUB, PDF, and CBZ books to add to your library.</string>
+	<string>Pagewrit scans your Downloads folder to find EPUB, PDF, and CBZ books to add to your library.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026</string>
 	<key>NSRemovableVolumesUsageDescription</key>
-	<string>Marginalia can look for books on connected drives you choose to add.</string>
+	<string>Pagewrit can look for books on connected drives you choose to add.</string>
 </dict>
 </plist>

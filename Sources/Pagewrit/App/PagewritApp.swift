@@ -25,6 +25,10 @@ extension Notification.Name {
 /// is still the only way to receive continue-userActivity on macOS
 /// SwiftUI-lifecycle apps.
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        performFirstLaunchSetupIfNeeded()
+    }
+
     func application(
         _ application: NSApplication,
         continue userActivity: NSUserActivity,
@@ -37,6 +41,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NotificationCenter.default.post(name: .stoaOpenBookFromSpotlight, object: hash)
         return true
+    }
+
+    /// Runs once, the very first time this installed copy of Pagewrit is
+    /// launched: registers the app with Launch Services/Spotlight right
+    /// away instead of waiting on background indexing, adds a Desktop
+    /// shortcut, and pins the app to the Dock. This is what makes a plain
+    /// drag-to-Applications install behave like a full installer without
+    /// the person who installed it ever touching Terminal — the first
+    /// double-click of the app itself does the rest.
+    private func performFirstLaunchSetupIfNeeded() {
+        let key = "com.thehappy.pagewrit.hasCompletedFirstLaunchSetup"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+
+        let appURL = Bundle.main.bundleURL
+        let appPath = appURL.path
+
+        runProcess(
+            "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+            args: ["-f", appPath]
+        )
+        runProcess("/usr/bin/mdimport", args: [appPath])
+
+        if let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first {
+            let linkURL = desktop.appendingPathComponent("Pagewrit")
+            try? FileManager.default.removeItem(at: linkURL)
+            try? FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: appURL)
+        }
+
+        let dockEntry = "<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key>"
+            + "<string>file://\(appPath)/</string><key>_CFURLStringType</key><integer>15</integer>"
+            + "</dict></dict></dict>"
+        runProcess("/usr/bin/defaults", args: ["write", "com.apple.dock", "persistent-apps", "-array-add", dockEntry])
+        runProcess("/usr/bin/killall", args: ["Dock"])
+
+        UserDefaults.standard.set(true, forKey: key)
+    }
+
+    private func runProcess(_ launchPath: String, args: [String]) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: launchPath)
+        process.arguments = args
+        try? process.run()
+        process.waitUntilExit()
     }
 }
 
