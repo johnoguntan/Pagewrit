@@ -445,10 +445,10 @@ with a throwaway personal-team signature:
    for local runs; that's correct and enough to stabilize TCC).
 4. Clear out the old ad-hoc-signed permission grants that are currently
    confusing macOS, from Terminal:
-     tccutil reset SystemPolicyDocumentsFolder com.sam.stoa.Stoa
-     tccutil reset SystemPolicyDesktopFolder com.sam.stoa.Stoa
-     tccutil reset SystemPolicyDownloadsFolder com.sam.stoa.Stoa
-   (bundle id is com.sam.stoa.Stoa per project.yml's bundleIdPrefix — check
+     tccutil reset SystemPolicyDocumentsFolder com.stoa
+     tccutil reset SystemPolicyDesktopFolder com.stoa
+     tccutil reset SystemPolicyDownloadsFolder com.stoa
+   (bundle id is com.stoa per project.yml's bundleIdPrefix — check
    Signing & Capabilities if it's actually something slightly different).
 5. Product → Clean Build Folder, then rebuild and run once. Approve the
    three folder prompts this one time.

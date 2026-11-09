@@ -1,6 +1,6 @@
-name: Stoa
+name: Pagewrit
 options:
-  bundleIdPrefix: com.sam.stoa
+  bundleIdPrefix: com.thehappy
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
@@ -9,7 +9,7 @@ settings:
     SWIFT_VERSION: "5.9"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
     # Hardened Runtime is required for notarization (Product > Archive >
-    # Distribute App > Direct Distribution). Nothing in Stoa needs an
+    # Distribute App > Direct Distribution). Nothing in Pagewrit needs an
     # exception entitlement for it — no JIT, no unsigned dylibs, no
     # debugging hooks — so this can just be on.
     ENABLE_HARDENED_RUNTIME: YES
@@ -22,51 +22,72 @@ packages:
     url: https://github.com/weichsel/ZIPFoundation
     from: "0.9.19"
 targets:
-  Stoa:
+  Pagewrit:
     type: application
     platform: macOS
     sources:
-      - path: Sources/Stoa
+      - path: Sources/Pagewrit
     info:
-      path: Sources/Stoa/App/Info.plist
+      path: Sources/Pagewrit/App/Info.plist
       properties:
-        CFBundleDisplayName: Stoa
+        CFBundleDisplayName: Pagewrit
         CFBundleIconName: AppIcon2
         CFBundleShortVersionString: "1.0.0"
         CFBundleVersion: "1"
         LSApplicationCategoryType: public.app-category.productivity
         LSMinimumSystemVersion: "14.0"
         NSHumanReadableCopyright: "© 2026"
-        NSDocumentsFolderUsageDescription: "Stoa scans your Documents folder to find EPUB, PDF, and CBZ books to add to your library."
-        NSDesktopFolderUsageDescription: "Stoa scans your Desktop folder to find EPUB, PDF, and CBZ books to add to your library."
-        NSDownloadsFolderUsageDescription: "Stoa scans your Downloads folder to find EPUB, PDF, and CBZ books to add to your library."
-        NSRemovableVolumesUsageDescription: "Stoa can look for books on connected drives you choose to add."
         ITSAppUsesNonExemptEncryption: false
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: Pagewrit Document
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            CFBundleTypeExtensions:
+              - epub
+              - pdf
+              - cbz
+              - pptx
+              - docx
+              - doc
+              - rtf
+              - odt
+              - txt
+              - md
+              - markdown
+              - mobi
+              - azw
+              - azw3
+              - prc
     settings:
       base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thehappy.Pagewrit
         DEVELOPMENT_TEAM: W3YMY5PN2X
         CODE_SIGN_STYLE: Automatic
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon2
     entitlements:
-      path: Sources/Stoa/App/Stoa.entitlements
+      path: Sources/Pagewrit/App/Pagewrit.entitlements
       properties:
-        com.apple.security.app-sandbox: false
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.files.bookmarks.app-scope: true
+        com.apple.security.network.client: true
     dependencies:
       - package: EPUBKit
       - package: ZIPFoundation
     scheme:
       testTargets:
-        - StoaTests
+        - PagewritTests
       gatherCoverageData: false
 
-  StoaTests:
+  PagewritTests:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - path: Tests/StoaTests
+      - path: Tests/PagewritTests
     settings:
       base:
         SWIFT_VERSION: "5.9"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.thehappy.Pagewrit.Tests
     dependencies:
-      - target: Stoa
+      - target: Pagewrit

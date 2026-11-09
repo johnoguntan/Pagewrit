@@ -1,4 +1,4 @@
-# Stoa
+# Pagewrit
 
 Sam's personal ebook library, built native for macOS.
 
@@ -22,13 +22,13 @@ What exists right now:
 ## First-time setup (run this on your actual Mac, in Terminal)
 
 ```bash
-cd ~/Documents/Stoa
+cd ~/Documents/Pagewrit
 brew install xcodegen        # one-time, if you don't have it
-xcodegen generate            # turns project.yml into Stoa.xcodeproj
-open Stoa.xcodeproj
+xcodegen generate            # turns project.yml into Pagewrit.xcodeproj
+open Pagewrit.xcodeproj
 ```
 
-Then in Xcode: pick the `Stoa` scheme, hit Run (⌘R). The first
+Then in Xcode: pick the `Pagewrit` scheme, hit Run (⌘R). The first
 launch will pop the standard macOS "would like to access files in your
 Documents/Desktop/Downloads folder" dialogs — click Allow on each. That's the
 whole permission story; no System Settings trip needed.
