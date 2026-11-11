@@ -522,7 +522,7 @@ struct HighlightsBrowser: View {
             HStack(alignment: .top, spacing: 24) {
                 MattedCoverView(book: book, cornerRadius: 6, showBadge: false)
                     .frame(width: 76)
-                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 5)
+                    .coverShadow()
 
                 VStack(alignment: .leading, spacing: 14) {
                     VStack(alignment: .leading, spacing: 3) {
@@ -530,7 +530,7 @@ struct HighlightsBrowser: View {
                             .font(DesignTokens.serifFont(size: 21, weight: .bold))
                             .tracking(-0.3)
                             .lineLimit(2)
-                        Text([book.author, "\(items.count) highlight\(items.count == 1 ? "" : "s")"]
+                        Text([book.displayAuthor, "\(items.count) highlight\(items.count == 1 ? "" : "s")"]
                             .compactMap { $0 }
                             .filter { !$0.isEmpty }
                             .joined(separator: ", "))
@@ -686,7 +686,7 @@ struct BookmarksBrowser: View {
                             HStack(alignment: .top, spacing: 24) {
                                 MattedCoverView(book: group.book, cornerRadius: 6, showBadge: false)
                                     .frame(width: 76)
-                                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 5)
+                                    .coverShadow()
                                 VStack(alignment: .leading, spacing: 10) {
                                     Text(group.book.title)
                                         .font(DesignTokens.serifFont(size: 21, weight: .bold))

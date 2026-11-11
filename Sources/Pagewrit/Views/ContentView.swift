@@ -313,7 +313,7 @@ struct ContentView: View {
         case .tag(let tag):
             books = books.filter { $0.tags.contains(tag) }
         case .author(let name):
-            books = books.filter { $0.author == name }
+            books = books.filter { $0.displayAuthor == name }
         case .shelf(let shelf):
             books = books.filter { $0.shelfNames.contains(shelf) }
         }
@@ -394,8 +394,7 @@ struct ContentView: View {
     /// sidebar's AUTHORS section — books with no author (or a blank one)
     /// have nothing to browse by, so they're simply left out.
     private var computeAllAuthors: [String] {
-        let names = library.books.compactMap { $0.author?.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        let names = library.books.compactMap { $0.displayAuthor }
         return Set(names).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
@@ -565,6 +564,7 @@ struct ContentView: View {
             navigationPath = NavigationPath()
             // Filters belong to the page they were set on: leaving it clears them.
             clearFilters()
+            showJumpToTop = false
         }
         .searchable(text: $searchText, prompt: "Search titles, authors, tags and text")
         // The Title / Author / Inside books choice only appears once you
@@ -704,6 +704,7 @@ struct ContentView: View {
             Text(library.lastSaveError ?? "")
         }
         .task {
+            ScrollActivity.start()
             if hasSeenOnboarding {
                 // First open of the day (or after a long gap): the full, animated
                 // scan. Any other launch only checks quietly for new files.
@@ -982,14 +983,18 @@ struct ContentView: View {
             if !isKnownLocation {
                 let folder = library.libraryFolder.appendingPathComponent("Added", isDirectory: true)
                 try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                var target = folder.appendingPathComponent(original.lastPathComponent)
-                var counter = 2
-                while FileManager.default.fileExists(atPath: target.path) {
-                    let name = original.deletingPathExtension().lastPathComponent
-                    target = folder.appendingPathComponent("\(name) \(counter).\(original.pathExtension)")
-                    counter += 1
-                }
-                if (try? FileManager.default.copyItem(at: original, to: target)) != nil { url = target }
+                // Copying a big file can take seconds, so it happens off the main thread.
+                let copied: URL? = await Task.detached(priority: .userInitiated) {
+                    var target = folder.appendingPathComponent(original.lastPathComponent)
+                    var counter = 2
+                    while FileManager.default.fileExists(atPath: target.path) {
+                        let name = original.deletingPathExtension().lastPathComponent
+                        target = folder.appendingPathComponent("\(name) \(counter).\(original.pathExtension)")
+                        counter += 1
+                    }
+                    return (try? FileManager.default.copyItem(at: original, to: target)) != nil ? target : nil
+                }.value
+                if let copied { url = copied }
             }
 
             guard let format = BookFormat(fileExtension: url.pathExtension) else { continue }
@@ -1756,8 +1761,13 @@ struct ContentView: View {
     @ViewBuilder
     private var sidebarBrowse: some View {
             // Ways to browse. Long lists start folded so the sidebar stays short.
-            collapsibleSection("Formats", id: "formats", count: BookFormat.allCases.count) {
-                ForEach(BookFormat.allCases, id: \.self) { format in
+            // Only the kinds of file the library actually holds; an empty
+            // "Kindle" or "CBZ" row is just something to wonder about.
+            let presentFormats = Set(library.books.map(\.format))
+            let shownFormats = BookFormat.allCases.filter { presentFormats.contains($0) }
+            if shownFormats.count > 1 {
+            collapsibleSection("Formats", id: "formats", count: shownFormats.count) {
+                ForEach(shownFormats, id: \.self) { format in
                     sidebarRow(
                         title: format.sectionTitle,
                         icon: format.systemImage,
@@ -1765,6 +1775,7 @@ struct ContentView: View {
                         iconColor: DesignTokens.formatColor(for: format)
                     )
                 }
+            }
             }
 
             if !allAuthors.isEmpty {
@@ -1978,17 +1989,7 @@ struct ContentView: View {
                 ScrollViewReader { scrollProxy in
                 ScrollView {
                     VStack(spacing: 0) {
-                    // A zero height marker at the very top: where the list starts,
-                    // and how far it has been scrolled.
-                    Color.clear.frame(height: 0)
-                        .id("libraryTop")
-                        .background(
-                            GeometryReader { geo in
-                                Color.clear.preference(
-                                    key: LibraryScrollOffsetKey.self,
-                                    value: geo.frame(in: .named("libraryScroll")).minY)
-                            }
-                        )
+                    Color.clear.frame(height: 0).id("libraryTop")
                     if searchText.isEmpty, sidebarSelection == .library, !library.books.isEmpty {
                         LibraryGreeting()
                             .padding(.horizontal, DesignTokens.Spacing.xl)
@@ -2034,6 +2035,15 @@ struct ContentView: View {
                                         density: gridDensity,
                                         onShowDetails: { navigationPath.append(book) }
                                     )
+                                    // The first cover leaving the screen is what shows the
+                                    // jump to top button. A plain VStack keeps filtering from
+                                    // re-measuring the page and bouncing the scroll position.
+                                    .onAppear {
+                                        if book === booksByFormat.first?.books.first, showJumpToTop { showJumpToTop = false }
+                                    }
+                                    .onDisappear {
+                                        if book === booksByFormat.first?.books.first, !showJumpToTop { showJumpToTop = true }
+                                    }
                                 }
                             } header: {
                                 sectionHeader(
@@ -2047,11 +2057,6 @@ struct ContentView: View {
                     .padding(.top, DesignTokens.Spacing.lg)
                     .padding(.bottom, DesignTokens.Spacing.xxl)
                     }
-                }
-                .coordinateSpace(name: "libraryScroll")
-                .onPreferenceChange(LibraryScrollOffsetKey.self) { offset in
-                    let far = offset < -700
-                    if far != showJumpToTop { showJumpToTop = far }
                 }
                 .overlay(alignment: .bottomTrailing) {
                     if showJumpToTop {
@@ -2203,9 +2208,24 @@ struct ContentView: View {
     }
 }
 
-private struct LibraryScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+/// True while the scroll wheel or trackpad is moving the page, and for a
+/// moment after. Read by tiles so they skip hover effects mid-scroll.
+enum ScrollActivity {
+    private(set) static var isScrolling = false
+    private static var monitor: Any?
+    private static var settle: DispatchWorkItem?
+
+    static func start() {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            isScrolling = true
+            settle?.cancel()
+            let work = DispatchWorkItem { isScrolling = false }
+            settle = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: work)
+            return event
+        }
+    }
 }
 
 private struct SidebarHeaderBottomKey: PreferenceKey {
@@ -2350,14 +2370,15 @@ struct HeroBand: View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: DesignTokens.Hero.cornerRadius, style: .continuous)
                 .fill(DesignTokens.surface)
+                .overlay {
+                    RoundedRectangle(cornerRadius: DesignTokens.Hero.cornerRadius, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.07), lineWidth: 0.75)
+                }
 
             HStack(alignment: .center, spacing: DesignTokens.Spacing.xl) {
                 MattedCoverView(book: book, cornerRadius: 11)
                     .frame(width: DesignTokens.Hero.coverWidth)
-                    .shadow(
-                        color: .black.opacity(colorScheme == .dark ? 0.5 : 0.25),
-                        radius: 18, x: 0, y: 12
-                    )
+                    .coverShadow(depth: 1.5)
 
                 // Spacing here is deliberately uneven — see
                 // DesignTokens.Hero.Rhythm — rather than one repeated
@@ -2440,10 +2461,10 @@ struct HeroBand: View {
                                     weight: .semibold
                                 ))
                         }
-                        .foregroundStyle(Color(nsColor: .windowBackgroundColor))
+                        .foregroundStyle(DesignTokens.solidInk)
                         .padding(.vertical, DesignTokens.Hero.Button.paddingV)
                         .padding(.horizontal, DesignTokens.Hero.Button.paddingH)
-                        .background(Color.primary, in: Capsule())
+                        .background(DesignTokens.solidFill, in: Capsule())
                     }
                     .padding(.top, DesignTokens.Hero.Rhythm.beforeButton)
                     .buttonStyle(TactileButtonStyle())
@@ -2458,7 +2479,7 @@ struct HeroBand: View {
         }
         .frame(height: DesignTokens.Hero.height)
         .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Hero.cornerRadius, style: .continuous))
-        .shadow(color: .black.opacity(colorScheme == .dark ? 0.4 : 0.08), radius: 20, x: 0, y: 10)
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.4 : 0.10), radius: 18, x: 0, y: 8)
     }
 }
 
@@ -2637,7 +2658,7 @@ struct BookCoverTile: View {
     private var liftScale: CGFloat { lifted ? DesignTokens.Hover.gridScale : 1 }
 
     private var spokenTitle: String {
-        guard let author = book.author, !author.isEmpty else { return book.title }
+        guard let author = book.displayAuthor else { return book.title }
         return "\(book.title), \(author)"
     }
 
@@ -2655,10 +2676,12 @@ struct BookCoverTile: View {
     }
 
     private var secondaryLine: String {
-        if let author = book.author, !author.isEmpty {
+        // No author means no line: showing the file type here ("PDF") read as
+        // if it were the author's name.
+        if let author = book.displayAuthor {
             return author
         }
-        return book.format.label
+        return ""
     }
 
     var body: some View {
@@ -2730,7 +2753,8 @@ struct BookCoverTile: View {
                     // one-line title card next to a two-line one otherwise stays
                     // aligned but says less than it could. Falls back to format
                     // when there's no author to show.
-                    Text(secondaryLine)
+                    // A blank line still holds its place so covers stay aligned.
+                    Text(secondaryLine.isEmpty ? " " : secondaryLine)
                         .font(DesignTokens.sansFont(size: DesignTokens.Grid.Author.fontSize))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -2752,6 +2776,9 @@ struct BookCoverTile: View {
             value: isHovered
         )
         .onHover { hovering in
+            // Tiles sliding under a still pointer while the page scrolls are not
+            // hovers; starting a lift animation on each one made scrolling stutter.
+            if hovering && ScrollActivity.isScrolling { return }
             isHovered = hovering
         }
         .contentShape(Rectangle())
@@ -2796,6 +2823,22 @@ struct BookCoverTile: View {
                 } label: {
                     Label("Mark as Invoice", systemImage: "doc.text")
                 }
+            }
+
+            Menu {
+                ForEach((1...5).reversed(), id: \.self) { value in
+                    Button {
+                        library.setRating(book, rating: value)
+                    } label: {
+                        Text("\(String(repeating: "\u{1F436}", count: value))  \(DogRating.words(for: value))")
+                    }
+                }
+                if book.rating > 0 {
+                    Divider()
+                    Button("Clear Rating") { library.setRating(book, rating: 0) }
+                }
+            } label: {
+                Label("Rate", systemImage: "face.smiling")
             }
 
             Button {
@@ -3136,6 +3179,8 @@ struct MattedCoverView: View {
                         .saturation(0.9)
                 }
                 .clipped()
+                // Flatten the blur once so scrolling moves a picture, not a live blur.
+                .drawingGroup()
                 Color.black.opacity(colorScheme == .dark ? 0.34 : 0.16)
             }
         }
@@ -3193,7 +3238,7 @@ struct MattedCoverView: View {
     // MARK: - Full-bleed placeholder (no cover available)
 
     private var fullBleedPlaceholder: some View {
-        GeneratedCover(title: book.title, author: book.author, seed: book.contentHash.isEmpty ? book.sourcePath : book.contentHash)
+        GeneratedCover(title: book.title, author: book.displayAuthor, seed: book.contentHash.isEmpty ? book.sourcePath : book.contentHash)
             .aspectRatio(DesignTokens.Grid.Cover.aspectRatio, contentMode: .fill)
     }
 

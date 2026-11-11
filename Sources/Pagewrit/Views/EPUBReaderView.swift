@@ -40,6 +40,8 @@ struct EPUBReaderView: View {
     @State private var chapterTitles: [String] = []
     @State private var currentChapterIndex: Int = 0
     @State private var isLoading = true
+    @State private var isOpeningFile = false
+    @State private var searchRunTask: Task<Void, Never>?
     @State private var loadFailed = false
     /// The book opened but its pages are locked by a store's copy protection.
     @State private var isCopyProtected = false
@@ -876,12 +878,45 @@ struct EPUBReaderView: View {
             return
         }
 
+        // Reading and stripping every chapter, then matching, can take seconds
+        // on a long book. It happens in the background so typing and scrolling
+        // stay smooth, and a newer search replaces an older one still running.
+        let indices: [Int] = (searchChapterOnly ? [currentChapterIndex] : Array(chapterURLs.indices))
+            .filter { chapterURLs.indices.contains($0) }
+        let urls = chapterURLs
+        let cacheSnapshot = chapterTextCache
+        searchRunTask?.cancel()
+        searchRunTask = Task.detached(priority: .userInitiated) {
+            let outcome = Self.searchChapters(regex: regex, indices: indices, urls: urls, cache: cacheSnapshot)
+            if Task.isCancelled { return }
+            await MainActor.run {
+                for (index, text) in outcome.newlyCached { chapterTextCache[index] = text }
+                searchCapped = outcome.capped
+                searchResults = outcome.results
+                collapsedSearchChapters = []
+                currentSearchIndex = 0
+            }
+        }
+    }
+
+    nonisolated private static func searchChapters(
+        regex: NSRegularExpression, indices: [Int], urls: [URL], cache: [Int: String]
+    ) -> (results: [EPUBSearchResult], capped: Bool, newlyCached: [Int: String]) {
         let maxTotal = 500, maxPerChapter = 100
         var results: [EPUBSearchResult] = []
         var capped = false
-        let indices: [Int] = searchChapterOnly ? [currentChapterIndex] : Array(chapterURLs.indices)
-        outer: for index in indices where chapterURLs.indices.contains(index) {
-            let text = cachedChapterText(at: index)
+        var newlyCached: [Int: String] = [:]
+        outer: for index in indices {
+            if Task.isCancelled { break }
+            let text: String
+            if let cached = cache[index] {
+                text = cached
+            } else if let html = try? String(contentsOf: urls[index], encoding: .utf8) {
+                text = TextExtractor.stripHTML(html)
+                newlyCached[index] = text
+            } else {
+                continue
+            }
             let ns = text as NSString
             let matches = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
             for (occurrence, m) in matches.enumerated() {
@@ -902,10 +937,7 @@ struct EPUBReaderView: View {
                 if results.count >= maxTotal { capped = true; break outer }
             }
         }
-        searchCapped = capped
-        searchResults = results
-        collapsedSearchChapters = []
-        currentSearchIndex = 0
+        return (results, capped, newlyCached)
     }
 
     private func moveSearchSelection(_ delta: Int) {
@@ -929,6 +961,7 @@ struct EPUBReaderView: View {
     }
 
     private func clearSearch() {
+        searchRunTask?.cancel()
         searchResults = []
         currentSearchIndex = 0
         pendingHighlightQuery = nil
@@ -1402,18 +1435,44 @@ struct EPUBReaderView: View {
 
     // MARK: - Loading
 
+    /// Unzips and reads the EPUB off the main thread, so the reader window
+    /// opens at once and shows its loading state instead of freezing.
     private func load() {
-        guard epub == nil else { return }
-
+        guard epub == nil, !isOpeningFile else { return }
         #if canImport(EPUBKit)
-        guard let epubDoc = EPUBDocument(url: library.readableURL(for: book)) else {
+        isOpeningFile = true
+        let url = library.readableURL(for: book)
+
+        struct Opened: @unchecked Sendable {
+            let doc: EPUBDocument?
+            let protected: Bool
+        }
+
+        Task.detached(priority: .userInitiated) {
+            let doc = EPUBDocument(url: url)
+            let protected = doc.map { EPUBProtection.isProtected(root: $0.directory) } ?? false
+            let opened = Opened(doc: doc, protected: protected)
+            await MainActor.run {
+                isOpeningFile = false
+                finishLoad(opened.doc, protected: opened.protected)
+            }
+        }
+        #else
+        loadFailed = true
+        isLoading = false
+        #endif
+    }
+
+    #if canImport(EPUBKit)
+    private func finishLoad(_ parsed: EPUBDocument?, protected: Bool) {
+        guard let epubDoc = parsed else {
             loadFailed = true
             isLoading = false
             return
         }
         // Store copy protection (Adobe, Apple, Readium LCP) leaves the pages
         // scrambled. Say so plainly instead of showing gibberish.
-        if EPUBProtection.isProtected(root: epubDoc.directory) {
+        if protected {
             isCopyProtected = true
             loadFailed = true
             isLoading = false
@@ -1480,11 +1539,8 @@ struct EPUBReaderView: View {
                 }
             }
         }
-        #else
-        loadFailed = true
-        isLoading = false
-        #endif
     }
+    #endif
 
     private func saveProgressIfNeeded() {
         if abs(bookProgress - lastSavedProgress) >= 0.01 { saveProgress() }

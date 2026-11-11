@@ -369,12 +369,12 @@ struct DogIntroView: View {
                     .font(DesignTokens.sansFont(size: 11.5, weight: .medium))
                     .opacity(selected ? 0.85 : 0.6)
             }
-            .foregroundStyle(selected ? Color.white : Color.primary)
+            .foregroundStyle(selected ? DesignTokens.solidInk : Color.primary)
             .frame(maxWidth: .infinity)
             .frame(height: 68)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(selected ? DesignTokens.accentFill : fieldFill)
+                    .fill(selected ? DesignTokens.solidFill : fieldFill)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)

@@ -245,22 +245,11 @@ struct DownloadBooksView: View {
     private func downloadControl(for result: UnifiedResult) -> some View {
         switch downloadStates[result.id] {
         case .downloading:
-            ProgressView()
-                .controlSize(.small)
-                .frame(width: 54)
+            DownloadPill(kind: .working, action: {})
         case .done:
-            Label("Added", systemImage: "checkmark.circle.fill")
-                .font(DesignTokens.sansFont(size: 12, weight: .semibold))
-                .foregroundStyle(DesignTokens.accent)
+            DownloadPill(kind: .done, action: {})
         case .failed:
-            Button {
-                startDownload(result)
-            } label: {
-                Text("Retry")
-                    .font(DesignTokens.sansFont(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(TactileButtonStyle())
+            DownloadPill(kind: .retry) { startDownload(result) }
         case .unavailable(let reason):
             Text(reason)
                 .font(DesignTokens.sansFont(size: 11))
@@ -273,19 +262,7 @@ struct DownloadBooksView: View {
                     .font(DesignTokens.sansFont(size: 11))
                     .foregroundStyle(.tertiary)
             } else {
-                Button {
-                    startDownload(result)
-                } label: {
-                    Label("Download", systemImage: "arrow.down.circle.fill")
-                        .labelStyle(.titleAndIcon)
-                        .font(DesignTokens.sansFont(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 16)
-                        .background(DesignTokens.accent, in: Capsule())
-                        .shadow(color: DesignTokens.accent.opacity(0.35), radius: 6, x: 0, y: 2)
-                }
-                .buttonStyle(TactileButtonStyle())
+                DownloadPill(kind: .ready) { startDownload(result) }
             }
         }
     }
@@ -346,6 +323,83 @@ struct DownloadBooksView: View {
             } catch {
                 downloadStates[result.id] = .failed
             }
+        }
+    }
+}
+
+
+// MARK: - Download pill
+
+/// The button at the end of each Get Books row. Every state is the same size,
+/// so rows line up and nothing shifts when a download starts or finishes.
+private struct DownloadPill: View {
+    enum Kind { case ready, working, done, retry }
+
+    let kind: Kind
+    let action: () -> Void
+
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    private static let width: CGFloat = 112
+    private static let height: CGFloat = 32
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                switch kind {
+                case .ready:
+                    Image(systemName: "arrow.down").font(.system(size: 11.5, weight: .bold))
+                    Text("Download")
+                case .working:
+                    ProgressView().controlSize(.small).scaleEffect(0.8)
+                    Text("Adding")
+                case .done:
+                    Image(systemName: "checkmark").font(.system(size: 11.5, weight: .bold))
+                    Text("Added")
+                case .retry:
+                    Image(systemName: "arrow.clockwise").font(.system(size: 11.5, weight: .bold))
+                    Text("Try again")
+                }
+            }
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(foreground)
+            .frame(width: Self.width, height: Self.height)
+            .background(Capsule().fill(fill))
+            .overlay(Capsule().strokeBorder(stroke, lineWidth: 0.75))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(TactileButtonStyle())
+        .disabled(kind == .working || kind == .done)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: hovering)
+        .animation(.easeOut(duration: 0.2), value: kind)
+    }
+
+    private var foreground: Color {
+        switch kind {
+        case .ready: DesignTokens.solidInk
+        case .working: .secondary
+        case .done: DesignTokens.accentInk
+        case .retry: DesignTokens.accentSecondary
+        }
+    }
+
+    private var fill: Color {
+        switch kind {
+        case .ready: DesignTokens.solidFill.opacity(hovering ? 0.88 : 1)
+        case .working: Color.primary.opacity(0.06)
+        case .done: DesignTokens.accent.opacity(0.14)
+        case .retry: DesignTokens.accentSecondary.opacity(hovering ? 0.20 : 0.12)
+        }
+    }
+
+    private var stroke: Color {
+        switch kind {
+        case .ready: .clear
+        case .working: Color.primary.opacity(0.08)
+        case .done: DesignTokens.accent.opacity(0.25)
+        case .retry: DesignTokens.accentSecondary.opacity(0.35)
         }
     }
 }

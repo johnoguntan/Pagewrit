@@ -33,6 +33,13 @@ enum DesignTokens {
     static let accentFill = Color(light: NSColor(red: 0.106, green: 0.361, blue: 0.447, alpha: 1),
                                   dark: NSColor(red: 0.161, green: 0.431, blue: 0.525, alpha: 1))
 
+    /// Solid buttons and chosen segments: near-white with dark text in dark
+    /// mode, near-black with light text in light mode.
+    static let solidFill = Color(light: NSColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1),
+                                 dark: NSColor(red: 0.93, green: 0.93, blue: 0.94, alpha: 1))
+    static let solidInk = Color(light: NSColor(red: 1, green: 1, blue: 1, alpha: 1),
+                                dark: NSColor(red: 0.08, green: 0.08, blue: 0.09, alpha: 1))
+
     /// The same hue deepened so small text in it passes contrast on white.
     static let accentInk = Color(light: NSColor(red: 0.133, green: 0.345, blue: 0.431, alpha: 1),
                                 dark: NSColor(red: 0.647, green: 0.827, blue: 0.890, alpha: 1))
@@ -44,11 +51,11 @@ enum DesignTokens {
     /// Quiet cool-tinted canvas (light) and ink-blue near black (dark).
     /// Not cream: white surfaces and covers lift off it, and the blue
     /// reads cleaner against a cool ground.
-    static let background = Color(light: NSColor(red: 0.953, green: 0.957, blue: 0.965, alpha: 1),
+    static let background = Color(light: NSColor(red: 0.918, green: 0.927, blue: 0.941, alpha: 1),
                                  dark: NSColor(red: 0.047, green: 0.051, blue: 0.063, alpha: 1))
 
     /// Cards and panels: a clear step above the canvas.
-    static let surface = Color(light: NSColor(red: 0.992, green: 0.993, blue: 0.996, alpha: 1),
+    static let surface = Color(light: NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1),
                               dark: NSColor(red: 0.094, green: 0.100, blue: 0.118, alpha: 1))
 
     /// Floating content: popovers, Settings groups.
@@ -511,8 +518,8 @@ private struct PWButtonBody: View {
 
     /// The main action: a deep teal in light mode, a bright teal in dark mode,
     /// with text chosen for contrast against each.
-    private static var primaryFill: Color { DesignTokens.accentFill }
-    private static let primaryText = Color.white
+    private static var primaryFill: Color { DesignTokens.solidFill }
+    private static let primaryText = DesignTokens.solidInk
 
     // Sized like the system's own controls (small, regular, large) so the
     // buttons sit comfortably next to anything else macOS draws.
@@ -616,7 +623,7 @@ struct ScanningIndicator: View {
 
     private var compactBody: some View {
         HStack(spacing: 10) {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { context in
+            TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: reduceMotion)) { context in
                 let t = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
                 ZStack {
                     ForEach(0..<3, id: \.self) { i in
@@ -624,6 +631,7 @@ struct ScanningIndicator: View {
                     }
                 }
                 .frame(width: 96, height: 64)
+                .drawingGroup()
                 .scaleEffect(0.42)
             }
             .frame(width: 44, height: 30)
@@ -639,7 +647,7 @@ struct ScanningIndicator: View {
 
     private var fullBody: some View {
         VStack(spacing: 10) {
-            TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion)) { context in
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { context in
                 let t = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
                 ZStack {
                     ForEach(0..<3, id: \.self) { i in
@@ -807,7 +815,7 @@ struct PWSegmented<Value: Hashable>: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.pagewritReduceMotion) private var reduceMotion
 
-    private static var selectedFill: Color { DesignTokens.accentFill }
+    private static var selectedFill: Color { DesignTokens.solidFill }
 
     private var selectedIndex: Int? { options.firstIndex { $0.value == selection } }
 
@@ -826,7 +834,7 @@ struct PWSegmented<Value: Hashable>: View {
                 Button { choose(index) } label: {
                     Text(options[index].label)
                         .font(.system(size: 12.5, weight: isSelected ? .semibold : .medium))
-                        .foregroundStyle(isSelected ? Color.white : Color.primary.opacity(hovered == index ? 0.95 : 0.75))
+                        .foregroundStyle(isSelected ? DesignTokens.solidInk : Color.primary.opacity(hovered == index ? 0.95 : 0.75))
                         .lineLimit(1)
                         .padding(.horizontal, 12)
                         .frame(maxWidth: width == nil ? nil : .infinity)
@@ -871,4 +879,28 @@ struct PWSegmented<Value: Hashable>: View {
 /// "1 book", "2 books": a count with the right word after it.
 func countText(_ count: Int, _ singular: String, _ plural: String? = nil) -> String {
     "\(count) \(count == 1 ? singular : (plural ?? singular + "s"))"
+}
+
+
+// MARK: - Cover shadow
+
+/// A shadow that sits a cover on the page the way a real book rests on a
+/// table: a tight dark line right under the edge, then a wide, faint fall-off.
+/// One heavy blur looks like a grey smudge in light mode, so there are two,
+/// and light mode uses less of both.
+private struct CoverShadow: ViewModifier {
+    var depth: CGFloat
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        let dark = colorScheme == .dark
+        content
+            .shadow(color: .black.opacity(dark ? 0.55 : 0.16), radius: 1.5 * depth, x: 0, y: 1 * depth)
+            .shadow(color: .black.opacity(dark ? 0.40 : 0.10), radius: 12 * depth, x: 0, y: 7 * depth)
+    }
+}
+
+extension View {
+    /// `depth` 1 is a list thumbnail; around 1.6 suits a large cover.
+    func coverShadow(depth: CGFloat = 1) -> some View { modifier(CoverShadow(depth: depth)) }
 }

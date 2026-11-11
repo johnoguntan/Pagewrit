@@ -19,7 +19,11 @@ final class LibraryStore: ObservableObject {
     /// Files deleted from the library that can still be put back.
     @Published private(set) var recycleBin: [RecycledBook] = RecycledBook.loadAll()
 
-    @Published private(set) var books: [Book] = []
+    @Published private(set) var books: [Book] = [] {
+        didSet { knownHashes = nil }
+    }
+    /// Every book's content hash, for instant "already in the library?" checks.
+    private var knownHashes: Set<String>?
     private var continueReadingCache: [Book] = []
     private var continueReadingKey = ""
 
@@ -235,7 +239,14 @@ final class LibraryStore: ObservableObject {
 
     // MARK: - Highlights & notes
 
-    @Published private(set) var highlights: [Highlight] = []
+    @Published private(set) var highlights: [Highlight] = [] {
+        didSet { highlightsByHash.removeAll(keepingCapacity: true) }
+    }
+
+    /// Sorted highlights per book, rebuilt only when the list changes. Reader
+    /// and detail screens ask for these on every redraw, and filtering and
+    /// sorting every highlight in the library each time added up.
+    private var highlightsByHash: [String: [Highlight]] = [:]
 
     /// A book's highlights in reading order.
     func highlights(for book: Book) -> [Highlight] {
@@ -243,13 +254,16 @@ final class LibraryStore: ObservableObject {
     }
 
     func highlights(forHash hash: String) -> [Highlight] {
-        highlights
+        if let cached = highlightsByHash[hash] { return cached }
+        let sorted = highlights
             .filter { $0.bookHash == hash }
             .sorted {
                 if $0.position != $1.position { return $0.position < $1.position }
                 if $0.pageIndex != $1.pageIndex { return $0.pageIndex < $1.pageIndex }
                 return $0.rangeStart < $1.rangeStart
             }
+        highlightsByHash[hash] = sorted
+        return sorted
     }
 
     /// Number of highlights in a book (for badges).
@@ -328,9 +342,17 @@ final class LibraryStore: ObservableObject {
     /// catches an EPUB/PDF pair of the same book, which contentHash never
     /// would), excluding any pair the user has already dismissed.
     var duplicateGroups: [[Book]] {
+        // The sidebar asks this several times on every redraw, and finding
+        // groups re-reads every title. Remember the answer until the library changes.
+        let key = dataVersion &* 31 &+ books.count &* 7 &+ dismissedDuplicatePairs.count
+        if let cached = duplicateCache, cached.key == key { return cached.groups }
         let dismissedKeys = Set(dismissedDuplicatePairs.map(\.pairKey))
-        return DuplicateDetector.findGroups(in: books, dismissedPairKeys: dismissedKeys)
+        let groups = DuplicateDetector.findGroups(in: books, dismissedPairKeys: dismissedKeys)
+        duplicateCache = (key, groups)
+        return groups
     }
+
+    private var duplicateCache: (key: Int, groups: [[Book]])?
 
     /// Record that the user looked at these two books and decided to keep
     /// both, so this pair stops showing up in the Duplicates tray.
@@ -353,12 +375,23 @@ final class LibraryStore: ObservableObject {
     /// library (added some other way, or reviewed under a duplicate record),
     /// and still on disk (a file that was moved or deleted can't be added).
     var needsReview: [BookClassification] {
-        classifications.filter {
+        // This checks the disk for every candidate, and the sidebar asks for it
+        // on every redraw. Remember the answer for a few seconds, and until
+        // the library changes.
+        let key = dataVersion &* 31 &+ books.count &* 7 &+ classifications.count
+        if let cached = needsReviewCache, cached.key == key, Date().timeIntervalSince(cached.at) < 8 {
+            return cached.value
+        }
+        let value = classifications.filter {
             $0.decision == .needsReview
                 && !contains(hash: $0.fileHash)
                 && FileManager.default.fileExists(atPath: $0.sourcePath)
         }
+        needsReviewCache = (key, Date(), value)
+        return value
     }
+
+    private var needsReviewCache: (key: Int, at: Date, value: [BookClassification])?
 
     /// Look up the classification for a content hash. If more than one
     /// record exists for the same file, a person's decision beats the
@@ -721,7 +754,8 @@ final class LibraryStore: ObservableObject {
 
     /// Returns true if a book with the given content hash already exists in the library.
     func contains(hash: String) -> Bool {
-        books.contains { $0.contentHash == hash }
+        if knownHashes == nil { knownHashes = Set(books.map(\.contentHash)) }
+        return knownHashes?.contains(hash) ?? false
     }
 
     /// Insert a new book into the library and persist.
@@ -1181,6 +1215,11 @@ extension LibraryStore {
     /// already exist are not added twice.
     @discardableResult
     func restoreBackup(from url: URL) throws -> RestoreSummary {
+        // A backup is a file someone may have edited or been sent, so nothing in
+        // it is trusted: size is capped and every value is checked on the way in.
+        if let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize, size > 80_000_000 {
+            throw BackupError.unreadable
+        }
         guard let data = try? Data(contentsOf: url),
               let object = try? PropertyListSerialization.propertyList(from: data, format: nil),
               let root = object as? [String: Any] else { throw BackupError.unreadable }
@@ -1222,15 +1261,19 @@ extension LibraryStore {
                   let page = item["page"] as? Int,
                   let start = item["start"] as? Int,
                   let length = item["length"] as? Int else { continue }
+            // Negative or enormous ranges would crash the readers that draw them.
+            guard (0...1_000_000).contains(page),
+                  (0...200_000_000).contains(start),
+                  (0...10_000_000).contains(length) else { continue }
             let key = "\(hash)|\(page)|\(start)|\(length)"
             guard !known.contains(key) else { continue }
             known.insert(key)
             let h = Highlight(
                 bookHash: hash, pageIndex: page, rangeStart: start, rangeLength: length,
-                position: item["position"] as? Double ?? 0,
-                text: item["text"] as? String ?? "",
+                position: Self.unit(item["position"] as? Double),
+                text: String((item["text"] as? String ?? "").prefix(20_000)),
                 color: HighlightColor(rawValue: item["color"] as? String ?? "") ?? .yellow,
-                note: item["note"] as? String ?? ""
+                note: String((item["note"] as? String ?? "").prefix(50_000))
             )
             if let created = item["createdAt"] as? Date { h.createdAt = created }
             modelContext.insert(h)
@@ -1241,8 +1284,9 @@ extension LibraryStore {
         var knownMarks = Set(bookmarks.map { "\($0.bookHash)|\($0.position)|\($0.label)" })
         for item in root["bookmarks"] as? [[String: Any]] ?? [] {
             guard let hash = item["hash"] as? String,
-                  let position = item["position"] as? Double else { continue }
-            let label = item["label"] as? String ?? ""
+                  let rawPosition = item["position"] as? Double, rawPosition.isFinite else { continue }
+            let position = Self.unit(rawPosition)
+            let label = String((item["label"] as? String ?? "").prefix(500))
             let key = "\(hash)|\(position)|\(label)"
             guard !knownMarks.contains(key) else { continue }
             knownMarks.insert(key)
@@ -1260,24 +1304,37 @@ extension LibraryStore {
         return summary
     }
 
+    /// A number kept inside 0...1; anything missing or not a real number becomes 0.
+    fileprivate static func unit(_ value: Double?) -> Double {
+        guard let value, value.isFinite else { return 0 }
+        return min(max(value, 0), 1)
+    }
+
     private func apply(_ record: [String: Any], to book: Book) {
-        if let title = record["title"] as? String, !title.isEmpty { book.title = title }
-        if let author = record["author"] as? String { book.author = author }
-        if let tags = record["tags"] as? [String] { book.tags = Array(Set(book.tags + tags)).sorted() }
-        if let shelves = record["shelves"] as? [String] { book.shelfNames = Array(Set(book.shelfNames + shelves)).sorted() }
+        func text(_ key: String, limit: Int = 500) -> String? {
+            (record[key] as? String).map { String($0.prefix(limit)) }
+        }
+        func words(_ key: String) -> [String]? {
+            (record[key] as? [String]).map { Array($0.prefix(200)).map { String($0.prefix(100)) } }
+        }
+        if let title = text("title"), !title.isEmpty { book.title = title }
+        if let author = text("author") { book.author = author }
+        if let tags = words("tags") { book.tags = Array(Set(book.tags + tags)).sorted() }
+        if let shelves = words("shelves") { book.shelfNames = Array(Set(book.shelfNames + shelves)).sorted() }
         if record["favorite"] as? Bool == true { book.isFavorite = true }
-        if let rating = record["rating"] as? Int, rating > 0 { book.rating = rating }
-        if let progress = record["progress"] as? Double, progress > (book.readingProgress ?? 0) {
-            book.readingProgress = progress
+        if let rating = record["rating"] as? Int, rating > 0 { book.rating = min(rating, 5) }
+        if let progress = record["progress"] as? Double, progress.isFinite {
+            let clean = Self.unit(progress)
+            if clean > (book.readingProgress ?? 0) { book.readingProgress = clean }
         }
         if let opened = record["lastOpenedAt"] as? Date, opened > (book.lastOpenedAt ?? .distantPast) {
-            book.lastOpenedAt = opened
+            book.lastOpenedAt = min(opened, Date())
         }
         if let added = record["addedAt"] as? Date, added < book.addedAt { book.addedAt = added }
-        if let series = record["series"] as? String { book.seriesName = series }
-        if let index = record["seriesIndex"] as? Double { book.seriesIndex = index }
-        if let status = record["status"] as? String { book.manualStatus = status }
-        if let cover = record["cover"] as? Data {
+        if let series = text("series") { book.seriesName = series }
+        if let index = record["seriesIndex"] as? Double, index.isFinite, abs(index) < 100_000 { book.seriesIndex = index }
+        if let status = text("status"), ReadingStatus(rawValue: status) != nil { book.manualStatus = status }
+        if let cover = record["cover"] as? Data, cover.count < 20_000_000 {
             let current = book.coverImagePath.map { FileManager.default.fileExists(atPath: $0) } ?? false
             if !current, let saved = saveCoverImage(cover, contentHash: book.contentHash) {
                 book.coverImagePath = saved

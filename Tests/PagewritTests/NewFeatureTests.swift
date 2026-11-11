@@ -146,4 +146,20 @@ final class NewFeatureTests: XCTestCase {
         XCTAssertEqual(clockText(3_661), "1:01:01")
         XCTAssertEqual(clockText(0.2), "0:01")
     }
+
+    // MARK: PDF zoom limits
+
+    /// A fit of zero once crashed the app (maxMagnification must be above 0).
+    func testZoomLimitsRefuseUnusableFits() {
+        XCTAssertNil(PDFZoom.limits(forFit: 0))
+        XCTAssertNil(PDFZoom.limits(forFit: -1))
+        XCTAssertNil(PDFZoom.limits(forFit: .nan))
+        XCTAssertNil(PDFZoom.limits(forFit: .infinity))
+    }
+
+    func testZoomLimitsForNormalFit() throws {
+        let limits = try XCTUnwrap(PDFZoom.limits(forFit: 1.0))
+        XCTAssertEqual(limits.min, 0.4, accuracy: 0.0001)
+        XCTAssertEqual(limits.max, 4.0, accuracy: 0.0001)
+    }
 }

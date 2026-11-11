@@ -29,6 +29,18 @@ enum PDFPageLayout: String, CaseIterable, Identifiable {
     }
 }
 
+/// The one place PDF zoom limits are worked out. PDFKit reports a "fit" of 0
+/// (or something non-finite) before the window has a size or for a page with
+/// no usable bounds, and handing that to the viewer as a maximum zoom is a hard
+/// crash (NSScrollView: maxMagnification must be greater than 0). Returning
+/// nil means "not yet, leave the zoom alone".
+enum PDFZoom {
+    static func limits(forFit fit: CGFloat) -> (min: CGFloat, max: CGFloat)? {
+        guard fit.isFinite, fit > 0.01 else { return nil }
+        return (fit * 0.4, fit * 4)
+    }
+}
+
 /// PDF pages are pictures, so themes work by filtering the rendered page:
 /// Sepia warms it, Night inverts it (keeping photo hues roughly right).
 enum PDFPageFilter {
@@ -88,6 +100,7 @@ struct PDFReaderView: View {
     @State private var currentPageIndex: Int = 0
     @State private var pageCount: Int = 0
     @State private var loadFailed = false
+    @State private var findCollector: PDFFindCollector?
     @State private var looksScanned = false
     @ObservedObject private var ocr = OCRManager.shared
     @State private var outline: [PDFOutlineEntry] = []
@@ -102,6 +115,8 @@ struct PDFReaderView: View {
     @State private var scaleFactor: CGFloat = 1.0
     @State private var fitScaleFactor: CGFloat = 1.0
     @State private var jumpToPageIndex: Int?
+    @State private var navigator = PDFNavigator()
+    @State private var saveTask: Task<Void, Never>?
 
     // Search
     @State private var searchQuery = ""
@@ -133,7 +148,14 @@ struct PDFReaderView: View {
 
     private var readerTheme: ReaderTheme { ReaderTheme(rawValue: readerThemeRaw) ?? .system }
     private var palette: ReaderPalette { readerTheme.palette(for: colorScheme) }
-    private var layout: PDFPageLayout { PDFPageLayout(rawValue: layoutRaw) ?? .scroll }
+    /// Two-up suits books. A resume, a form or a handful of slides opening as
+    /// facing pages looks like a mistake, so short files never use it.
+    private var allowsSpread: Bool { pageCount >= 20 }
+    private var availableLayouts: [PDFPageLayout] { PDFPageLayout.allCases.filter { $0 != .spread || allowsSpread } }
+    private var layout: PDFPageLayout {
+        let chosen = PDFPageLayout(rawValue: layoutRaw) ?? .scroll
+        return chosen == .spread && !allowsSpread ? .scroll : chosen
+    }
 
     /// Page colour is its own setting, separate from the reader theme (which
     /// the EPUB reader shares), so a document is never recoloured unless you
@@ -204,7 +226,17 @@ struct PDFReaderView: View {
         }
         .onChange(of: currentPageIndex) { _, newValue in
             if searchPageOnly && sidebarTab == .search { runSearch() }
-            saveProgress(pageIndex: newValue)
+            // Saving on every page of a quick run of turns kept the whole
+            // reader busy; wait until the turning settles.
+            saveTask?.cancel()
+            saveTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                if !Task.isCancelled { saveProgress(pageIndex: newValue) }
+            }
+        }
+        .onDisappear {
+            saveTask?.cancel()
+            saveProgress(pageIndex: currentPageIndex)
         }
         .focusable()
         .onKeyPress(.rightArrow) { goToPage(currentPageIndex + 1); return .handled }
@@ -218,8 +250,17 @@ struct PDFReaderView: View {
 
     // MARK: - Page
 
-    @ViewBuilder
     private var page: some View {
+        ZStack {
+            pageContent
+            if document == nil && !loadFailed {
+                ProgressView().controlSize(.large)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var pageContent: some View {
         if loadFailed {
             failureState
         } else if let document {
@@ -229,6 +270,7 @@ struct PDFReaderView: View {
                 scaleFactor: $scaleFactor,
                 fitScaleFactor: $fitScaleFactor,
                 jumpToPageIndex: $jumpToPageIndex,
+                navigator: navigator,
                 activeSelection: activeSelection,
                 highlights: library.highlights(for: book).filter { $0.rangeLength > 0 },
                 highlightRequest: $highlightRequest,
@@ -448,8 +490,8 @@ struct PDFReaderView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Page layout").font(DesignTokens.sansFont(size: 12, weight: .semibold))
-                Picker("Page layout", selection: $layoutRaw) {
-                    ForEach(PDFPageLayout.allCases) { option in
+                Picker("Page layout", selection: Binding(get: { layout.rawValue }, set: { layoutRaw = $0 })) {
+                    ForEach(availableLayouts) { option in
                         Text(option.label).tag(option.rawValue)
                     }
                 }
@@ -956,8 +998,23 @@ struct PDFReaderView: View {
             : nil
 
         let options: NSString.CompareOptions = searchMatchCase ? [.literal] : [.caseInsensitive]
-        let found = document.findString(trimmed, withOptions: options)
 
+        // Searching a long PDF page by page on the main thread froze the
+        // window for seconds. PDFKit can search in the background and report
+        // each match as it goes, so the app keeps responding meanwhile.
+        findCollector?.onFinish = nil   // an older search must not overwrite this one
+        document.cancelFindString()
+        let collector = PDFFindCollector(limit: searchPageOnly ? 5000 : maxSearchResults * 3)
+        collector.onFinish = { found in
+            finishSearch(found: found, query: trimmed, wordRegex: wordRegex)
+        }
+        findCollector = collector
+        document.delegate = collector
+        document.beginFindString(trimmed, withOptions: options)
+    }
+
+    private func finishSearch(found: [PDFSelection], query trimmed: String, wordRegex: NSRegularExpression?) {
+        guard let document else { return }
         var hits: [PDFSearchHit] = []
         var capped = false
         for selection in found {
@@ -988,6 +1045,8 @@ struct PDFReaderView: View {
     }
 
     private func clearSearch() {
+        findCollector?.onFinish = nil
+        document?.cancelFindString()
         searchResults = []
         currentSearchIndex = 0
         activeSelection = nil
@@ -1028,6 +1087,39 @@ struct PDFReaderView: View {
         return ticks.count <= 80 ? ticks : []
     }
 
+    /// One click to change how pages are laid out, always in view, so a
+    /// reader never has to know a setting exists to undo it.
+    private var layoutSwitcher: some View {
+        HStack(spacing: 2) {
+            ForEach(availableLayouts) { option in
+                ReaderIconButton(
+                    systemName: layoutIcon(option),
+                    help: layoutHelp(option),
+                    isActive: layout == option,
+                    tint: tint, accent: accent
+                ) {
+                    layoutRaw = option.rawValue
+                }
+            }
+        }
+    }
+
+    private func layoutIcon(_ option: PDFPageLayout) -> String {
+        switch option {
+        case .scroll: "rectangle.split.1x2"
+        case .single: "rectangle"
+        case .spread: "rectangle.split.2x1"
+        }
+    }
+
+    private func layoutHelp(_ option: PDFPageLayout) -> String {
+        switch option {
+        case .scroll: "One page wide, scroll down"
+        case .single: "One page at a time"
+        case .spread: "Two pages side by side"
+        }
+    }
+
     private var footer: some View {
         let shown = scrubValue ?? progress
         let scrubPage = Int((shown * Double(max(pageCount - 1, 0))).rounded())
@@ -1041,6 +1133,8 @@ struct PDFReaderView: View {
                 Text(leftLabel)
                     .lineLimit(1)
                 Spacer()
+                layoutSwitcher
+                    .padding(.trailing, 12)
                 Button {
                     pageJumpText = String(currentPageIndex + 1)
                     showPageJump = true
@@ -1117,7 +1211,14 @@ struct PDFReaderView: View {
 
     private func goToPage(_ index: Int) {
         guard pageCount > 0 else { return }
-        jumpToPageIndex = min(max(index, 0), pageCount - 1)
+        let target = min(max(index, 0), pageCount - 1)
+        // Straight to the page view: no round trip through state, so the
+        // buttons and arrow keys answer at once.
+        if let view = navigator.view, let page = view.document?.page(at: target) {
+            view.go(to: page)
+        } else {
+            jumpToPageIndex = target
+        }
     }
 
     // MARK: - Keyboard shortcuts
@@ -1186,9 +1287,14 @@ struct PDFReaderView: View {
 
     // MARK: - Loading
 
+    /// The pages open right away on the main thread, where PDFKit expects to
+    /// be used. The slow extras (the outline and the check for a scanned PDF)
+    /// are worked out on a separate copy in the background, so the document
+    /// the reader shows is never touched from two threads at once.
     private func load() {
         guard document == nil else { return }
-        guard let doc = PDFDocument(url: library.readableURL(for: book)) else {
+        let url = library.readableURL(for: book)
+        guard let doc = PDFDocument(url: url) else {
             loadFailed = true
             return
         }
@@ -1196,12 +1302,21 @@ struct PDFReaderView: View {
         if let progress = book.readingProgress, pageCount > 1 {
             currentPageIndex = min(max(Int((progress * Double(pageCount - 1)).rounded()), 0), pageCount - 1)
         }
-        outline = flattenOutline(doc.outlineRoot, document: doc)
         document = doc
-        looksScanned = !library.hasSearchableCopy(book) && OCRService.isScanned(document: doc)
+
+        let hasSearchableCopy = library.hasSearchableCopy(book)
+        Task.detached(priority: .utility) {
+            guard let scratch = PDFDocument(url: url) else { return }
+            let entries = Self.flattenOutline(scratch.outlineRoot, document: scratch)
+            let scanned = !hasSearchableCopy && OCRService.isScanned(document: scratch)
+            await MainActor.run {
+                outline = entries
+                looksScanned = scanned
+            }
+        }
     }
 
-    private func flattenOutline(_ node: PDFOutline?, depth: Int = 0, document: PDFDocument) -> [PDFOutlineEntry] {
+    nonisolated private static func flattenOutline(_ node: PDFOutline?, depth: Int = 0, document: PDFDocument) -> [PDFOutlineEntry] {
         guard let node else { return [] }
         var entries: [PDFOutlineEntry] = []
 
@@ -1216,7 +1331,7 @@ struct PDFReaderView: View {
                 }
                 entries.append(PDFOutlineEntry(title: label, depth: depth, pageIndex: pageIndex))
             }
-            entries.append(contentsOf: flattenOutline(child, depth: depth + 1, document: document))
+            entries.append(contentsOf: Self.flattenOutline(child, depth: depth + 1, document: document))
         }
         return entries
     }
@@ -1247,6 +1362,7 @@ private struct PDFKitRepresentedView: NSViewRepresentable {
     @Binding var scaleFactor: CGFloat
     @Binding var fitScaleFactor: CGFloat
     @Binding var jumpToPageIndex: Int?
+    let navigator: PDFNavigator
     let activeSelection: PDFSelection?
     let highlights: [Highlight]
     @Binding var highlightRequest: PDFHighlightRequest?
@@ -1278,16 +1394,25 @@ private struct PDFKitRepresentedView: NSViewRepresentable {
             DispatchQueue.main.async {
                 view.go(to: page)
                 let fit = view.scaleFactorForSizeToFit
+                // Before the window has a size (or for an odd first page) PDFKit
+                // reports a fit of 0, and a zero maximum zoom is a hard crash.
+                // The resize handler sets the zoom once there is a real size.
+                guard let limits = PDFZoom.limits(forFit: fit) else {
+                    view.window?.makeFirstResponder(view)
+                    return
+                }
                 fitScaleFactor = fit
                 scaleFactor = fit
+                context.coordinator.lastPushedScale = fit
                 view.scaleFactor = fit
-                view.minScaleFactor = fit * 0.4
-                view.maxScaleFactor = fit * 4
+                view.minScaleFactor = limits.min
+                view.maxScaleFactor = limits.max
                 view.window?.makeFirstResponder(view)
             }
         }
 
         context.coordinator.pdfView = view
+        navigator.view = view
         view.onClickAnnotation = { [weak coordinator = context.coordinator] annotation in
             coordinator?.handleAnnotationClick(annotation)
         }
@@ -1328,15 +1453,25 @@ private struct PDFKitRepresentedView: NSViewRepresentable {
             nsView.displayMode = layout.mode
             DispatchQueue.main.async {
                 let fit = nsView.scaleFactorForSizeToFit
-                nsView.minScaleFactor = fit * 0.4
-                nsView.maxScaleFactor = fit * 4
+                guard let limits = PDFZoom.limits(forFit: fit) else {
+                    if let anchor { nsView.go(to: anchor) }
+                    return
+                }
+                nsView.minScaleFactor = limits.min
+                nsView.maxScaleFactor = limits.max
                 fitScaleFactor = fit
                 scaleFactor = fit
+                c.lastPushedScale = fit
                 nsView.scaleFactor = fit
                 if let anchor { nsView.go(to: anchor) }
             }
-        } else if abs(nsView.scaleFactor - scaleFactor) > 0.001 {
-            nsView.scaleFactor = scaleFactor
+        } else if abs(scaleFactor - c.lastPushedScale) > 0.001 {
+            // Only push a zoom the reader itself asked for. Comparing against
+            // PDFKit's live value on every update made the two fight when a
+            // page change moved the zoom: PDFKit reported it, this reset it,
+            // and the page turn was lost in the tug of war.
+            c.lastPushedScale = scaleFactor
+            if abs(nsView.scaleFactor - scaleFactor) > 0.001 { nsView.scaleFactor = scaleFactor }
         }
 
         if let target = jumpToPageIndex, let page = document.page(at: target) {
@@ -1361,6 +1496,8 @@ private struct PDFKitRepresentedView: NSViewRepresentable {
         var parent: PDFKitRepresentedView
         weak var pdfView: PDFView?
         var lastRequestID: UUID?
+        /// The last zoom the reader pushed into (or read back from) PDFKit.
+        var lastPushedScale: CGFloat = 0
         /// What is currently drawn for each saved highlight, so annotations
         /// can be added, recoloured or removed without touching the PDF file.
         var applied: [PersistentIdentifier: AppliedHighlight] = [:]
@@ -1460,6 +1597,7 @@ private struct PDFKitRepresentedView: NSViewRepresentable {
         @objc func scaleChanged() {
             guard let pdfView else { return }
             let current = pdfView.scaleFactor
+            lastPushedScale = current
             DispatchQueue.main.async { [parent] in
                 if abs(parent.scaleFactor - current) > 0.001 { parent.scaleFactor = current }
             }
@@ -1469,12 +1607,12 @@ private struct PDFKitRepresentedView: NSViewRepresentable {
         @objc func frameChanged() {
             guard let pdfView else { return }
             let newFit = pdfView.scaleFactorForSizeToFit
-            guard newFit > 0 else { return }
+            guard let limits = PDFZoom.limits(forFit: newFit) else { return }
             DispatchQueue.main.async { [parent] in
                 let wasFit = abs(parent.scaleFactor - parent.fitScaleFactor) < 0.005
                 parent.fitScaleFactor = newFit
-                pdfView.minScaleFactor = newFit * 0.4
-                pdfView.maxScaleFactor = newFit * 4
+                pdfView.minScaleFactor = limits.min
+                pdfView.maxScaleFactor = limits.max
                 if wasFit { parent.scaleFactor = newFit }
             }
         }
@@ -1484,7 +1622,14 @@ private struct PDFKitRepresentedView: NSViewRepresentable {
                   let document = pdfView.document else { return }
             let index = document.index(for: page)
             guard index != NSNotFound else { return }
-            parent.currentPageIndex = index
+            // PDFKit announces a page change while SwiftUI may still be in the
+            // middle of updating this view (a jump, a layout switch). Writing
+            // state right then is what filled the log with "Modifying state
+            // during view update" and kept the reader busy. Do it a beat later.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.parent.currentPageIndex != index else { return }
+                self.parent.currentPageIndex = index
+            }
         }
     }
 
@@ -1559,4 +1704,46 @@ final class HighlightingPDFView: PDFView {
             onClickAnnotation?(annotation)
         }
     }
+}
+
+
+// MARK: - Background search
+
+/// Collects matches while PDFKit searches a document in the background, then
+/// hands them over once on the main thread. PDFKit keeps only a weak reference
+/// to its delegate, so the reader holds this object for as long as it searches.
+final class PDFFindCollector: NSObject, PDFDocumentDelegate {
+    private let limit: Int
+    private var selections: [PDFSelection] = []
+    private var finished = false
+    var onFinish: (([PDFSelection]) -> Void)?
+
+    init(limit: Int) { self.limit = limit }
+
+    func didMatchString(_ instance: PDFSelection) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.finished else { return }
+            self.selections.append(instance)
+            if self.selections.count >= self.limit {
+                instance.pages.first?.document?.cancelFindString()
+                self.finish()
+            }
+        }
+    }
+
+    func documentDidEndDocumentFind(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in self?.finish() }
+    }
+
+    private func finish() {
+        guard !finished else { return }
+        finished = true
+        onFinish?(selections)
+    }
+}
+
+
+/// Lets the reader's buttons turn pages directly on the PDF view.
+final class PDFNavigator {
+    weak var view: PDFView?
 }

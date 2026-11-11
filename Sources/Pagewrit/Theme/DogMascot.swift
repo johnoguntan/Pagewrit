@@ -308,7 +308,7 @@ struct DogMascot: View {
     private var frameInterval: Double {
         let busy = fetchStart != nil || mood == .happy
             || Date().timeIntervalSince(hopStart) < 1
-        return busy ? 1.0 / 30.0 : 1.0 / 12.0
+        return busy ? 1.0 / 30.0 : 1.0 / 8.0
     }
 
     private var fur: Color { Color(red: 0.985, green: 0.985, blue: 0.99) }

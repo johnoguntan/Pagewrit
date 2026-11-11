@@ -1089,9 +1089,9 @@ extension SettingsView {
         } label: {
             Text(letter)
                 .font(DesignTokens.sansFont(size: 12.5, weight: on ? .semibold : .medium))
-                .foregroundStyle(on ? Color.white : Color.primary.opacity(0.8))
+                .foregroundStyle(on ? DesignTokens.solidInk : Color.primary.opacity(0.8))
                 .frame(width: 30, height: 30)
-                .background(Circle().fill(on ? DesignTokens.accentFill : Color.primary.opacity(0.08)))
+                .background(Circle().fill(on ? DesignTokens.solidFill : Color.primary.opacity(0.08)))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)

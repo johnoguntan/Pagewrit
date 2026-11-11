@@ -343,7 +343,7 @@ enum ImportPipeline {
 
         if let coverEntry = entries.first(where: { entry in
             let ext = (entry.path as NSString).pathExtension.lowercased()
-            return imageExtensions.contains(ext)
+            return imageExtensions.contains(ext) && entry.uncompressedSize < 60_000_000
         }) {
             var coverData = Data()
             do {

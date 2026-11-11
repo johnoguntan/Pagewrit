@@ -146,7 +146,12 @@ enum InternetArchiveService {
             throw ServiceError.noOpenFileAvailable
         }
 
-        let ext = (file.name as NSString).pathExtension
+        // Only the two types the reader opens; the extension comes from the
+        // server, so it is never used as given.
+        let ext = (file.name as NSString).pathExtension.lowercased()
+        guard DownloadSafety.kind(forExtension: ext.isEmpty ? "pdf" : ext) != nil else {
+            throw ServiceError.noOpenFileAvailable
+        }
         return DownloadCandidate(url: downloadURL, fileExtension: ext.isEmpty ? "pdf" : ext)
     }
 
@@ -161,14 +166,17 @@ enum InternetArchiveService {
 
         let (tempURL, response) = try await URLSession.shared.download(from: candidate.url)
         guard let httpResponse = response as? HTTPURLResponse,
-              (200..<300).contains(httpResponse.statusCode)
+              (200..<300).contains(httpResponse.statusCode),
+              let kind = DownloadSafety.kind(forExtension: candidate.fileExtension),
+              DownloadSafety.isValid(file: tempURL, response: response, kind: kind)
         else {
+            try? FileManager.default.removeItem(at: tempURL)
             throw ServiceError.badResponse
         }
 
         let folder = try downloadsDirectory()
         let safeTitle = GutenbergService.safeFileName(result.title)
-        let fileName = safeTitle.isEmpty ? result.identifier : safeTitle
+        let fileName = safeTitle.isEmpty ? GutenbergService.safeFileName(result.identifier) : safeTitle
 
         var destination = folder.appendingPathComponent("\(fileName).\(candidate.fileExtension)")
         if FileManager.default.fileExists(atPath: destination.path) {

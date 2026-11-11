@@ -14,6 +14,10 @@ import EPUBKit
 /// directly, which keeps LibraryStore's SwiftData context untouched from
 /// background threads.
 enum TextExtractor {
+    /// The most text kept per book for search. A huge file must not be able to
+    /// fill memory or disk through the search index.
+    static let maxIndexedCharacters = 20_000_000
+
     static func extractText(url: URL, format: BookFormat) -> String? {
         switch format {
         case .pdf:
@@ -44,6 +48,7 @@ enum TextExtractor {
             if let page = document.page(at: index), let pageText = page.string {
                 text += pageText
                 text += "\n"
+                if text.utf8.count > maxIndexedCharacters { break }
             }
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -61,6 +66,7 @@ enum TextExtractor {
             guard let html = try? String(contentsOf: chapterURL, encoding: .utf8) else { continue }
             text += stripHTML(html)
             text += "\n"
+            if text.utf8.count > maxIndexedCharacters { break }
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed

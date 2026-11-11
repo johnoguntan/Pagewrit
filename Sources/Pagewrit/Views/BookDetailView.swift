@@ -83,12 +83,7 @@ struct BookDetailView: View {
     private var coverSection: some View {
         MattedCoverView(book: book, cornerRadius: DesignTokens.Detail.coverCornerRadius, showBadge: false)
             .frame(width: DesignTokens.Detail.coverWidth)
-            .shadow(
-                color: DesignTokens.Shadow.heavy(colorScheme: colorScheme).color,
-                radius: DesignTokens.Shadow.heavy(colorScheme: colorScheme).radius,
-                x: 0,
-                y: DesignTokens.Shadow.heavy(colorScheme: colorScheme).y
-            )
+            .coverShadow(depth: 1.7)
             .fixedSize()
     }
 
@@ -107,7 +102,7 @@ struct BookDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let author = book.author, !author.isEmpty {
+            if let author = book.displayAuthor {
                 Text(author)
                     .font(DesignTokens.sansFont(size: DesignTokens.Detail.Author.fontSize))
                     .foregroundStyle(.secondary)
@@ -135,28 +130,17 @@ struct BookDetailView: View {
 
     private var readingSection: some View {
         VStack(alignment: .leading, spacing: DesignTokens.Spacing.sm) {
-            HStack(spacing: DesignTokens.Spacing.md) {
-                Picker("Status", selection: Binding(
-                    get: { book.status },
-                    set: { library.setStatus(book, status: $0) }
-                )) {
-                    ForEach(ReadingStatus.allCases) { status in
-                        Text(status.label).tag(status)
-                    }
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: DesignTokens.Spacing.xl) {
+                    statusBlock
+                    ratingBlock
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(maxWidth: 260)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Your rating")
-                        .font(DesignTokens.sansFont(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                    DogRating(rating: book.rating, size: 20) { value in
-                        library.setRating(book, rating: value)
-                    }
+                VStack(alignment: .leading, spacing: DesignTokens.Spacing.md) {
+                    statusBlock
+                    ratingBlock
                 }
             }
+            .padding(.bottom, 4)
 
             HStack(spacing: 8) {
                 Text("Series")
@@ -181,6 +165,30 @@ struct BookDetailView: View {
                 seriesDraft = book.seriesName ?? ""
                 seriesNumberDraft = Self.formatIndex(book.seriesIndex)
             }
+        }
+    }
+
+    private var statusBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Status")
+                .font(DesignTokens.sansFont(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+            ReadingStatusPills(selection: Binding(
+                get: { book.status },
+                set: { library.setStatus(book, status: $0) }
+            ))
+        }
+    }
+
+    private var ratingBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Your rating")
+                .font(DesignTokens.sansFont(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+            DogRating(rating: book.rating, size: 22, showsLabel: true) { value in
+                library.setRating(book, rating: value)
+            }
+            .frame(height: 36)
         }
     }
 
@@ -677,5 +685,64 @@ private struct FlowLayout: Layout {
             sourceURL: URL(fileURLWithPath: "/Users/test/Book.pdf")
         ))
         .environmentObject(LibraryStore())
+    }
+}
+
+
+// MARK: - Reading status pills
+
+/// Unread, Reading, Finished as three round, roomy buttons. The chosen one is
+/// filled in the deep teal; the others are soft until you point at them.
+struct ReadingStatusPills: View {
+    @Binding var selection: ReadingStatus
+
+    @State private var hovered: ReadingStatus?
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.pagewritReduceMotion) private var reduceMotion
+
+    private func icon(_ status: ReadingStatus) -> String {
+        switch status {
+        case .unread: "circle"
+        case .reading: "book"
+        case .finished: "checkmark"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(ReadingStatus.allCases) { status in
+                let isSelected = selection == status
+                Button {
+                    guard !isSelected else { return }
+                    Haptics.tick()
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.18)) { selection = status }
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: icon(status))
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(status.label)
+                            .font(.system(size: 13.5, weight: isSelected ? .semibold : .medium))
+                    }
+                    .foregroundStyle(isSelected ? DesignTokens.solidInk : Color.primary.opacity(hovered == status ? 0.95 : 0.78))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background {
+                        Capsule()
+                            .fill(isSelected ? DesignTokens.solidFill
+                                  : Color.primary.opacity(hovered == status ? 0.12 : 0.07))
+                    }
+                    .overlay {
+                        Capsule().strokeBorder(Color.primary.opacity(isSelected ? 0 : 0.10), lineWidth: 0.75)
+                    }
+                    .shadow(color: .black.opacity(isSelected ? (colorScheme == .dark ? 0.35 : 0.15) : 0), radius: 2, y: 1)
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .onHover { inside in hovered = inside ? status : (hovered == status ? nil : hovered) }
+                .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Reading status")
     }
 }

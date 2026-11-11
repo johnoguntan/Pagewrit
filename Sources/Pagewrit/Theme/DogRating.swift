@@ -1,17 +1,32 @@
 import SwiftUI
 import AppKit
 
-/// Five dogs instead of five stars. A reusable control so the same
-/// little character can show up wherever the app asks "how was it?".
+/// Five little dog faces instead of five stars. A reusable control so the same
+/// character can show up wherever the app asks "how was it?". Earned faces are
+/// full colour on a soft coral disc; the rest are quiet grey.
 struct DogRating: View {
     let rating: Int
     var size: CGFloat = 18
     var interactive = true
+    /// Say the rating in words beside the faces ("Loved it").
+    var showsLabel = false
     let onChange: (Int) -> Void
 
     @State private var hovered: Int?
     @State private var bounced: Int?
     @State private var bursts = [Int](repeating: 0, count: 6)
+
+    /// The words for a rating, 1 to 5.
+    static func words(for rating: Int) -> String {
+        switch rating {
+        case 1: "Not for me"
+        case 2: "It was okay"
+        case 3: "Good"
+        case 4: "Really good"
+        case 5: "Loved it"
+        default: "Not rated"
+        }
+    }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -19,9 +34,15 @@ struct DogRating: View {
                 // Pointing at the last filled dog previews taking it away.
                 let shown = (hovered != nil && hovered == rating) ? rating - 1 : (hovered ?? rating)
                 let filled = index <= shown
-                Image(systemName: filled ? "dog.fill" : "dog")
-                    .font(.system(size: size, weight: .regular))
-                    .foregroundStyle(filled ? DesignTokens.accentSecondary : Color.secondary.opacity(0.55))
+                Text("\u{1F436}")
+                    .font(.system(size: size))
+                    .saturation(filled ? 1 : 0.35)
+                    .opacity(filled ? 1 : 0.30)
+                    .padding(size * 0.16)
+                    .background(
+                        Circle().fill(filled ? DesignTokens.accentSecondary.opacity(0.18)
+                                             : Color.primary.opacity(0.05))
+                    )
                     .scaleEffect(bounced == index ? 1.3 : (hovered == index ? 1.12 : 1))
                     .animation(.spring(response: 0.25, dampingFraction: 0.5), value: bounced)
                     .animation(.easeOut(duration: 0.12), value: hovered)
@@ -48,6 +69,14 @@ struct DogRating: View {
                         }
                     }
                     .help(interactive ? (rating == index ? "Remove this dog" : "\(index) of 5") : "")
+            }
+            if showsLabel {
+                let shown = (hovered != nil && hovered == rating) ? rating - 1 : (hovered ?? rating)
+                Text(Self.words(for: shown))
+                    .font(DesignTokens.sansFont(size: 12.5))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 6)
+                    .animation(nil, value: shown)
             }
         }
         .accessibilityElement(children: .ignore)

@@ -9,6 +9,23 @@ import SwiftData
 final class Book: Hashable {
     var title: String
     var author: String?
+
+    /// The author as a reader should see it. File metadata often holds a
+    /// publisher, a program name or a placeholder instead of a person; those
+    /// read as wrong, so they are left out.
+    var displayAuthor: String? {
+        guard let raw = author?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        let lower = raw.lowercased()
+        let junk = [
+            "unknown", "anonymous", "admin", "administrator", "user", "author", "n/a", "none", "null",
+            "publishing", "publishers", "publisher", "press", "microsoft", "word", "adobe", "acrobat",
+            "calibre", "libreoffice", "pdf", "scan", "scanner", ".com", ".org", ".net", "www", "http",
+            "online", "ebook", "e-book", "digital", "library", "document"
+        ]
+        let words = lower.split(whereSeparator: { !$0.isLetter && $0 != "." && $0 != "-" }).map(String.init)
+        if junk.contains(where: { key in key.hasPrefix(".") || key == "www" || key == "http" ? lower.contains(key) : words.contains(key) }) { return nil }
+        return raw
+    }
     var formatRaw: String     // stored as String for SwiftData; computed `format` accessor below
     var sourcePath: String    // sourceURL.path — stored as String because URL isn't Codable by SwiftData
     var libraryPath: String?  // libraryURL?.path
