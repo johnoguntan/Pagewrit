@@ -38,6 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppAppearance.applySaved()
         EPUBContentRules.warmUp()
+        CrashReporter.shared.start()
 
         // Closing the library window closes every open reader with it, so no
         // orphaned reading windows are left behind.
@@ -123,7 +124,7 @@ struct PagewritApp: App {
                     .keyboardShortcut("3", modifiers: .command)
                 Button("Duplicates") { NotificationCenter.default.post(name: .pagewritGo, object: "duplicates") }
                     .keyboardShortcut("4", modifiers: .command)
-                Button("Highlighted") { NotificationCenter.default.post(name: .pagewritGo, object: "highlighted") }
+                Button("Highlights & Notes") { NotificationCenter.default.post(name: .pagewritGo, object: "highlighted") }
                     .keyboardShortcut("5", modifiers: .command)
                 Button("Bookmarks") { NotificationCenter.default.post(name: .pagewritGo, object: "bookmarks") }
                     .keyboardShortcut("6", modifiers: .command)
@@ -140,6 +141,7 @@ struct PagewritApp: App {
                     .keyboardShortcut("/", modifiers: .command)
                 Button("Welcome to Pagewrit") { library.showWelcome = true }
                 if AppInfo.hasSupportContact {
+                    Button("Report a Problem\u{2026}") { CrashReporter.shared.reportProblem() }
                     Button("Contact Support\u{2026}") { AppInfo.contactSupport() }
                 }
                 Button("Privacy\u{2026}") { library.showSettings = true }
@@ -192,7 +194,7 @@ struct KeyboardShortcutsView: View {
             e("Favorites", "\u{2318}", "2"),
             e("Needs Review", "\u{2318}", "3"),
             e("Duplicates", "\u{2318}", "4"),
-            e("Highlighted", "\u{2318}", "5"),
+            e("Highlights & Notes", "\u{2318}", "5"),
             e("Bookmarks", "\u{2318}", "6"),
             e("Recycle Bin", "\u{2318}", "7"),
             e("Invoices", "\u{2318}", "8"),

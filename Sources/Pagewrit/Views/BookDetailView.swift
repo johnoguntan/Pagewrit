@@ -149,9 +149,8 @@ struct BookDetailView: View {
                 .frame(maxWidth: 260)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("YOUR RATING")
+                    Text("Your rating")
                         .font(DesignTokens.sansFont(size: 10, weight: .semibold))
-                        .tracking(0.6)
                         .foregroundStyle(.secondary)
                     DogRating(rating: book.rating, size: 20) { value in
                         library.setRating(book, rating: value)
@@ -160,9 +159,8 @@ struct BookDetailView: View {
             }
 
             HStack(spacing: 8) {
-                Text("SERIES")
+                Text("Series")
                     .font(DesignTokens.sansFont(size: 11, weight: .semibold))
-                    .tracking(0.6)
                     .foregroundStyle(.secondary)
                 TextField("Series name", text: $seriesDraft)
                     .textFieldStyle(.roundedBorder)
@@ -270,7 +268,7 @@ struct BookDetailView: View {
         let markdown = MarkdownExporter.exportNotes(for: book, highlights: items)
         let panel = NSSavePanel()
         panel.title = "Export Highlights and Notes"
-        panel.nameFieldStringValue = book.title.replacingOccurrences(of: "/", with: "-") + " \u{2014} notes"
+        panel.nameFieldStringValue = book.title.replacingOccurrences(of: "/", with: "-") + " notes"
         panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
@@ -281,7 +279,7 @@ struct BookDetailView: View {
 
     private var tagSection: some View {
         chipEditor(
-            title: "TAGS",
+            title: "Tags",
             icon: nil,
             items: book.tags,
             placeholder: "Add tag",
@@ -310,7 +308,7 @@ struct BookDetailView: View {
 
     private var shelfSection: some View {
         chipEditor(
-            title: "SHELVES",
+            title: "Shelves",
             icon: "books.vertical",
             items: book.shelfNames,
             placeholder: "Add to shelf",

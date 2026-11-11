@@ -97,7 +97,7 @@ struct ContentView: View {
     @AppStorage("stoa.hasSeenOnboarding") private var hasSeenOnboarding = false
     @AppStorage("pagewrit.hasMetDog") private var hasMetDog = false
     /// Sidebar sections folded away. Long lists start folded.
-    @AppStorage("pagewrit.sidebarCollapsed") private var collapsedSectionsRaw = "authors,folders,tags"
+    @AppStorage("pagewrit.sidebarCollapsed") private var collapsedSectionsRaw = "authors,tags"
     @AppStorage("pagewrit.showDog") private var showDogSetting = true
     @State private var showDogIntro = false
     @State private var showOnboarding = false
@@ -217,7 +217,7 @@ struct ContentView: View {
             switch self {
             case .reading: return "Reading"
             case .format: return "Format"
-            case .none: return "Nothing"
+            case .none: return "None"
             }
         }
     }
@@ -486,7 +486,8 @@ struct ContentView: View {
             .filter {
                 !shownHashes.contains($0.contentHash)
                     && visibleHashes.contains($0.contentHash)
-                    && ($0.readingProgress ?? 0) == 0
+                    // "Still on your shelf" means not started: not even opened.
+                    && $0.status == .unread
                     && library.isHeroEligible($0)
             }
             .sorted { $0.contentHash < $1.contentHash }
@@ -553,7 +554,8 @@ struct ContentView: View {
                     }
             }
         }
-        .navigationTitle("Library")
+        // The window title names the list you are looking at.
+        .navigationTitle(sidebarSelection == .library ? "Library" : currentListTitle)
         // Sidebar selection swaps out `detailContent`, but the detail
         // column's own NavigationStack keeps its push stack regardless \u{2014}
         // without this, picking a sidebar item while a book detail page is
@@ -565,7 +567,9 @@ struct ContentView: View {
             clearFilters()
         }
         .searchable(text: $searchText, prompt: "Search titles, authors, tags and text")
-        .searchScopes($searchScope) {
+        // The Title / Author / Inside books choice only appears once you
+        // start typing, when it actually means something.
+        .searchScopes($searchScope, activation: .onTextEntry) {
             ForEach(LibrarySearchScope.allCases) { scope in
                 Text(scope.label).tag(scope)
             }
@@ -665,7 +669,7 @@ struct ContentView: View {
             }
             // Say what each control is, not just draw an icon.
         }
-        .tint(DesignTokens.accent)
+        .tint(DesignTokens.accentFill)
         .scrollIndicators(.hidden)
         .background(DesignTokens.background.ignoresSafeArea())
         .background(WindowShadowFixer())
@@ -786,22 +790,28 @@ struct ContentView: View {
     /// filename.
     private var currentListTitle: String {
         switch sidebarSelection {
-        case .library, .needsReview, .duplicates, .recycleBin, .bookmarks, .invoices, .none:
+        case .library, .none:
             return "All Books"
+        case .needsReview: return "Needs Review"
+        case .duplicates: return "Duplicates"
+        case .recycleBin: return "Recycle Bin"
+        case .bookmarks: return "Bookmarks"
+        case .invoices: return "Invoices"
         case .favorites:
             return "Favorites"
         case .status(let raw):
+            if raw == ReadingStatus.reading.rawValue { return "Reading Now" }
             return ReadingStatus(rawValue: raw)?.label ?? "Books"
         case .topRated:
             return "Rated"
         case .highlighted:
-            return "Highlighted"
+            return "Highlights & Notes"
         case .series(let name):
             return name
         case .savedList(let id):
             return savedLists.first(where: { $0.id.uuidString == id })?.name ?? "List"
         case .folder(let path):
-            return URL(fileURLWithPath: path).lastPathComponent
+            return ScannerService.displayName(for: URL(fileURLWithPath: path))
         case .format(let rawValue):
             return BookFormat(rawValue: rawValue)?.sectionTitle ?? "Books"
         case .tag(let tag):
@@ -1059,6 +1069,8 @@ struct ContentView: View {
         repeat {
             rescanPending = false
             await performRescan()
+            // Any extra rounds (folder changes during the scan) run quietly.
+            quietScan = true
         } while rescanPending
         if !quiet {
             UserDefaults.standard.set(Date(), forKey: Self.lastFullScanKey)
@@ -1084,13 +1096,22 @@ struct ContentView: View {
 
         // A file that is still being written (a download in progress) would
         // be hashed half-finished; leave it and look again shortly.
-        let settleDate = Date().addingTimeInterval(-6)
-        let candidates = scanner.discoveredFiles.filter { ($0.modifiedAt ?? .distantPast) < settleDate }
-        if candidates.count < scanner.discoveredFiles.count {
-            let wasQuiet = quietScan
+        let now = Date()
+        let settleDate = now.addingTimeInterval(-6)
+        let candidates = scanner.discoveredFiles.filter {
+            let modified = $0.modifiedAt ?? .distantPast
+            // A date in the future is a wrong clock on the file, not a download.
+            return modified < settleDate || modified > now.addingTimeInterval(60)
+        }
+        // Look again once, quietly, for files still being written. This used
+        // to start a full, visible scan every 8 seconds for as long as any
+        // file kept changing, which looked like scanning that never ended.
+        if candidates.count < scanner.discoveredFiles.count, !settleCheckScheduled {
+            settleCheckScheduled = true
             Task {
                 try? await Task.sleep(nanoseconds: 8_000_000_000)
-                await rescanAndImport(quiet: wasQuiet)
+                settleCheckScheduled = false
+                await rescanAndImport(quiet: true)
             }
         }
 
@@ -1391,8 +1412,10 @@ struct ContentView: View {
     @Namespace private var sidebarSelectionNamespace
     @State private var isRescanning = false
     @State private var quietScan = false
+    @State private var settleCheckScheduled = false
     @State private var sidebarHeaderHeight: CGFloat = 110
     @FocusState private var focusedSidebar: SidebarSelection?
+    @State private var didSetInitialFocus = false
     @State private var showJumpToTop = false
     @ObservedObject private var invoiceStore =  InvoiceStore.shared
     @State private var sidebarTopInset: CGFloat = 28
@@ -1421,6 +1444,16 @@ struct ContentView: View {
             }
             .padding(.horizontal, DesignTokens.Sidebar.outerMargin)
             .padding(.bottom, DesignTokens.Spacing.md)
+        }
+        // Keyboard focus starts on the sidebar, not in the search field, so
+        // the window opens calm. Set once at launch only: a standing default
+        // (defaultFocus) pulled focus back to All Books whenever it was lost,
+        // which made the sidebar jump up and down while picking an author.
+        .task {
+            guard !didSetInitialFocus else { return }
+            didSetInitialFocus = true
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if focusedSidebar == nil { focusedSidebar = sidebarSelection }
         }
         .background {
             // A quiet tinted panel with a faint wash of the accent at the top,
@@ -1655,14 +1688,17 @@ struct ContentView: View {
                 badge: library.continueReading.isEmpty ? nil : "\(library.continueReading.count)"
             )
             sidebarRow(title: "Favorites", icon: "heart", selection: .favorites)
-            sidebarRow(
-                title: "Invoices",
-                icon: "doc.text",
-                selection: .invoices,
-                badge: (invoiceStore.overdueCount + invoiceStore.dueSoonCount) > 0
-                    ? "\(invoiceStore.overdueCount + invoiceStore.dueSoonCount)" : nil,
-                badgeNeedsAttention: invoiceStore.overdueCount > 0
-            )
+            // Only for people who have invoices; others never see an empty list.
+            if !invoiceStore.invoices.isEmpty || sidebarSelection == .invoices {
+                sidebarRow(
+                    title: "Invoices",
+                    icon: "doc.text",
+                    selection: .invoices,
+                    badge: (invoiceStore.overdueCount + invoiceStore.dueSoonCount) > 0
+                        ? "\(invoiceStore.overdueCount + invoiceStore.dueSoonCount)" : nil,
+                    badgeNeedsAttention: invoiceStore.overdueCount > 0
+                )
+            }
     }
 
     @ViewBuilder
@@ -1839,7 +1875,7 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .help(collapsed ? "Show \(title)" : "Hide \(title)")
         .accessibilityLabel(title)
-        .accessibilityValue(collapsed ? "Collapsed, \(count) items" : "Expanded")
+        .accessibilityValue(collapsed ? "Collapsed, \(countText(count, "item"))" : "Expanded")
         .accessibilityHint("Shows or hides this section")
         if !collapsed {
             rows()
@@ -1883,9 +1919,23 @@ struct ContentView: View {
             activeFilterBar
 
             if scanner.isScanning && !quietScan {
-                ScanningIndicator(detail: scanner.discoveredFiles.isEmpty
-                                  ? nil : "\(scanner.discoveredFiles.count) files found")
-                    .padding(.vertical, DesignTokens.Spacing.md)
+                if library.books.isEmpty {
+                    // The very first scan: something to watch while it fills.
+                    ScanningIndicator(detail: scanner.discoveredFiles.isEmpty
+                                      ? nil : "\(countText(scanner.discoveredFiles.count, "file")) found")
+                        .padding(.vertical, DesignTokens.Spacing.md)
+                } else {
+                    // Later scans: the same page shuffle, as one slim row that never pushes the page around.
+                    ScanningIndicator(label: scanner.discoveredFiles.isEmpty
+                                      ? "Checking your folders for new books"
+                                      : "Checking your folders",
+                                      detail: scanner.discoveredFiles.isEmpty
+                                      ? nil : "\(countText(scanner.discoveredFiles.count, "file")) so far",
+                                      compact: true)
+                        .padding(.horizontal, DesignTokens.Spacing.xl)
+                        .padding(.vertical, 6)
+                        .transition(.opacity)
+                }
             }
 
             if library.isImporting && library.importProgress < 1.0 && !quietScan {
@@ -1939,12 +1989,30 @@ struct ContentView: View {
                                     value: geo.frame(in: .named("libraryScroll")).minY)
                             }
                         )
+                    if searchText.isEmpty, sidebarSelection == .library, !library.books.isEmpty {
+                        LibraryGreeting()
+                            .padding(.horizontal, DesignTokens.Spacing.xl)
+                            .padding(.top, DesignTokens.Spacing.lg)
+                    }
                     if searchText.isEmpty, !heroEntries.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(alignment: .top, spacing: DesignTokens.Spacing.lg) {
                                 ForEach(Array(heroEntries.enumerated()), id: \.element.book.contentHash) { pair in
                                     HeroBand(book: pair.element.book, kind: pair.element.kind)
-                                        .frame(width: DesignTokens.Hero.cardWidth)
+                                        // Share the visible width when there is room, but never
+                                        // narrower than the card's own design: its cover, words
+                                        // and progress bar need 440 points, and squeezing below
+                                        // that made cards spill over each other. In a narrow
+                                        // window the row scrolls instead.
+                                        .containerRelativeFrame(.horizontal) { length, _ in
+                                            let count = CGFloat(max(heroEntries.count, 1))
+                                            let room = length - DesignTokens.Spacing.xl * 2
+                                                - DesignTokens.Spacing.lg * (count - 1)
+                                            return min(max(room / count, DesignTokens.Hero.cardWidth),
+                                                       DesignTokens.Hero.cardWidth + 120)
+                                        }
+                                        .clipShape(RoundedRectangle(cornerRadius: DesignTokens.Hero.cornerRadius,
+                                                                    style: .continuous))
                                         .riseIn(delay: Double(pair.offset) * 0.06)
                                 }
                             }
@@ -2457,7 +2525,7 @@ struct FavoriteHeartButton: View {
             withAnimation(.spring(response: 0.25, dampingFraction: 0.55)) { action() }
             if liking && !reduceMotion {
                 CelebrationCenter.shared.celebrateAtPointer()
-                DogPet.shared.cheer("A new favourite. Approved.")
+                DogPet.shared.cheer("A new favorite. Approved.")
                 celebrate()
             }
         } label: {
@@ -2482,6 +2550,49 @@ struct FavoriteHeartButton: View {
     }
 }
 
+// MARK: - Greeting
+
+/// A short, personal line at the top of the library: the time of day, and
+/// where you stand with today's reading.
+struct LibraryGreeting: View {
+    @ObservedObject private var tracker = ReadingTracker.shared
+
+    private var salutation: String {
+        switch Calendar.current.component(.hour, from: Date()) {
+        case 5..<12: return "Good morning"
+        case 12..<17: return "Good afternoon"
+        case 17..<22: return "Good evening"
+        default: return "Reading late"
+        }
+    }
+
+    private var detail: String {
+        let read = tracker.minutesToday
+        if tracker.progressToday >= 1 {
+            return "\(readingMinutesText(read)) read today. Goal reached."
+        }
+        if read == 0 { return "Pick up where you left off, or start something new." }
+        let left = max(tracker.goalMinutes - read, 1)
+        return "\(readingMinutesText(read)) read today, \(readingMinutesText(left)) to your goal."
+    }
+
+    var body: some View {
+        TimelineView(.everyMinute) { _ in
+            VStack(alignment: .leading, spacing: 4) {
+                Text(salutation)
+                    .font(DesignTokens.serifFont(size: 28, weight: .bold))
+                    .tracking(-0.5)
+                Text(detail)
+                    .font(DesignTokens.sansFont(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+        }
+        .onAppear { tracker.refreshDay() }
+    }
+}
+
 // MARK: - BookCoverTile
 
 /// VoiceOver for a cover tile, kept out of the tile's body so the compiler
@@ -2500,7 +2611,7 @@ private struct TileAccessibility: ViewModifier {
             .accessibilityLabel(title)
             .accessibilityValue(details)
             .accessibilityAddTraits(.isButton)
-            .accessibilityHint("Opens the book. Use the actions menu for details and favourites.")
+            .accessibilityHint("Opens the book. Use the actions menu for details and favorites.")
             .accessibilityAction { open() }
             .accessibilityAction(named: Text("Show details")) { showDetails() }
             .accessibilityAction(named: Text(isFavorite ? "Remove from Favorites" : "Add to Favorites")) { toggleFavorite() }
@@ -2539,7 +2650,7 @@ struct BookCoverTile: View {
         case .unread: parts.append("not started")
         }
         if book.rating > 0 { parts.append("rated \(book.rating) of 5") }
-        if book.isFavorite { parts.append("favourite") }
+        if book.isFavorite { parts.append("favorite") }
         return parts.joined(separator: ", ")
     }
 
@@ -2669,6 +2780,13 @@ struct BookCoverTile: View {
                 Label("Read", systemImage: "book.fill")
             }
 
+            Button {
+                library.setStatus(book, status: book.isFinished ? .unread : .finished)
+            } label: {
+                Label(book.isFinished ? "Mark as Unread" : "Mark as Read",
+                      systemImage: book.isFinished ? "circle" : "checkmark.circle")
+            }
+
             if [BookFormat.pdf, BookFormat.docx, BookFormat.text].contains(book.format),
                !InvoiceStore.shared.contains(book.contentHash) {
                 Button {
@@ -2780,7 +2898,9 @@ struct GeneratedCover: View {
 
     /// The main title and an optional subtitle, split where a real jacket
     /// would split them: "Stoa — Plan & Architecture" sets "Stoa" large.
-    private var parts: (main: String, sub: String?) {
+    private var parts: (main: String, sub: String?) { Self.titleParts(title) }
+
+    static func titleParts(_ title: String) -> (main: String, sub: String?) {
         let cleaned = title.replacingOccurrences(of: "_", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return ("Untitled", nil) }
@@ -2910,6 +3030,7 @@ struct MattedCoverView: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var thumbnail: NSImage?
     @State private var thumbnailLoaded = false
+    @State private var hovering = false
 
     private var monogram: String {
         String(book.title.prefix(1)).uppercased()
@@ -2929,7 +3050,9 @@ struct MattedCoverView: View {
             }
 
             // Generated covers and sheets already say what they are.
-            if showBadge && (book.coverImageURL != nil || book.format.rendersLiveThumbnail) {
+            // Only on hover: the section and the line under the cover already
+            // say the format, and a badge on every cover is clutter.
+            if showBadge && hovering && (book.coverImageURL != nil || book.format.rendersLiveThumbnail) {
                 formatBadge
                     .padding(DesignTokens.Spacing.xs)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -2941,6 +3064,9 @@ struct MattedCoverView: View {
             RoundedRectangle(cornerRadius: cornerRadius)
                 .stroke(DesignTokens.hairline(colorScheme: colorScheme), lineWidth: 0.5)
         )
+        .onHover { inside in
+            withAnimation(.easeOut(duration: 0.15)) { hovering = inside }
+        }
         .onAppear {
             loadThumbnail()
         }
@@ -3274,7 +3400,7 @@ struct NeedsReviewTray: View {
                 Text("Needs review")
                     .font(DesignTokens.serifFont(size: 28, weight: .bold))
                     .tracking(-0.6)
-                Text("\(all.count) files the classifier was unsure about")
+                Text("\(countText(all.count, "file")) the classifier was unsure about")
                     .font(DesignTokens.sansFont(size: 12.5))
                     .foregroundStyle(.secondary)
             }

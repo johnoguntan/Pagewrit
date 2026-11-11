@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Pagewrit's privacy manifest, required by Apple for App Store review.
+  Pagewrit collects no data and does no tracking. It only declares the
+  "required reason" APIs it uses, and why:
+  - UserDefaults: its own settings, reading goal and history (CA92.1).
+  - File dates: modification and creation dates of books in folders you
+    chose to watch (3B52.1), of its own library files and backups (C617.1),
+    and "added" and "opened" dates shown in the library (DDA9.1).
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>3B52.1</string>
+				<string>C617.1</string>
+				<string>DDA9.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

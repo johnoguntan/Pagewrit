@@ -28,7 +28,7 @@ struct DownloadBooksView: View {
             case .gutenberg:
                 "Free, public-domain titles from Project Gutenberg"
             case .internetArchive:
-                "Open scans from Internet Archive \u{2014} lending-only items are filtered out"
+                "Open scans from Internet Archive. Lending-only items are left out."
             }
         }
     }
@@ -342,7 +342,7 @@ struct DownloadBooksView: View {
                 // optimization on every download.
                 NotificationCenter.default.post(name: .stoaBooksDownloaded, object: destination)
             } catch InternetArchiveService.ServiceError.noOpenFileAvailable {
-                downloadStates[result.id] = .unavailable("Lending only \u{2014} not downloadable")
+                downloadStates[result.id] = .unavailable("Lending only, can't be downloaded")
             } catch {
                 downloadStates[result.id] = .failed
             }

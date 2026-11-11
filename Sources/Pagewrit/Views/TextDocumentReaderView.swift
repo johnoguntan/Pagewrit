@@ -450,11 +450,13 @@ struct TextDocumentReaderView: View {
         .environment(\.colorScheme, (ReaderTheme(rawValue: readerThemeRaw) ?? .system).controlScheme(system: colorScheme))
         .background(Color(nsColor: palette.background).ignoresSafeArea())
         .onAppear {
-            library.markOpened(book)
+            // Documents are usually work, not reading: no clock, and their
+            // time does not count toward the daily goal.
+            library.markOpened(book, countsTime: false)
             progress = book.readingProgress ?? 0
             load()
         }
-        .onDisappear { speech.stop(); library.commitReading() }
+        .onDisappear { speech.stop(); library.commitReading(countsTime: false) }
         .onAppear {
             for delay in [0.5, 1.5, 3.0] {
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) { checkExternalJump() }
@@ -576,7 +578,6 @@ struct TextDocumentReaderView: View {
                 Button { speech.stop() } label: { Image(systemName: "stop.fill") }.help("Stop reading")
             }
 
-            ReadingTimerPill(tint: tint, accent: accent)
 
             ReaderCloseButton(help: "Close this document (\u{2318}W)", tint: tint, rule: rule) { dismissWindow() }
         }

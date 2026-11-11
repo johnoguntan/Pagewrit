@@ -34,6 +34,7 @@ final class ScannerService: ObservableObject {
     /// Bigger cloud files wait until you open them.
     nonisolated static let maxAutoDownloadBytes: Int64 = 250_000_000
     private var cloudRecheck: Task<Void, Never>?
+    private var lastCloudWaiting = 0
 
     /// While cloud books are downloading, look again every minute so they
     /// join the library soon after they land.
@@ -198,7 +199,10 @@ final class ScannerService: ObservableObject {
                        let status = values?.ubiquitousItemDownloadingStatus,
                        status != .current, status != .downloaded {
                         waiting += 1
-                        if downloadCloud, Int64(values?.fileSize ?? 0) < ScannerService.maxAutoDownloadBytes {
+                        // Ask once per file per session: asking again on every scan
+                        // touched the folder, which started another scan.
+                        if downloadCloud, Int64(values?.fileSize ?? 0) < ScannerService.maxAutoDownloadBytes,
+                           CloudDownloadRequests.shared.claim(fileURL.path) {
                             try? fileManager.startDownloadingUbiquitousItem(at: fileURL)
                         }
                         continue
@@ -231,7 +235,11 @@ final class ScannerService: ObservableObject {
 
         discoveredFiles = scanned.files
         cloudDownloadsWaiting = scanned.waiting
-        if scanned.waiting > 0 { scheduleCloudRecheck() }
+        // Keep checking only while the number still waiting is going down.
+        if scanned.waiting > 0, scanned.waiting < lastCloudWaiting || lastCloudWaiting == 0 {
+            scheduleCloudRecheck()
+        }
+        lastCloudWaiting = scanned.waiting
         lastScanDate = Date()
         isScanning = false
     }
@@ -321,6 +329,13 @@ extension ScannerService {
     /// You can add the whole drive or just a "Books" folder inside it.
     @discardableResult
     func addCloudFolder(_ service: CloudService) -> Bool {
+        // The drive is not on this Mac: say why and how to fix it, instead
+        // of opening a folder picker somewhere unrelated.
+        let start = Self.startFolder(for: service)
+        guard FileManager.default.fileExists(atPath: start.path) else {
+            Self.explainMissing(service)
+            return false
+        }
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -336,7 +351,35 @@ extension ScannerService {
         panel.prompt = "Add \(service.name)"
         guard panel.runModal() == .OK, let url = panel.url else { return false }
         addFolder(url)
+        // Show it straight away: unfold Watched Folders in the sidebar.
+        let key = "pagewrit.sidebarCollapsed"
+        if let folded = UserDefaults.standard.string(forKey: key) {
+            let kept = folded.split(separator: ",").filter { $0 != "folders" }.joined(separator: ",")
+            UserDefaults.standard.set(kept, forKey: key)
+        }
         return true
+    }
+
+    private static func explainMissing(_ service: CloudService) {
+        let alert = NSAlert()
+        switch service {
+        case .iCloudDrive:
+            alert.messageText = "iCloud Drive is not turned on"
+            alert.informativeText = "Turn it on in System Settings, under your Apple Account, iCloud, then iCloud Drive. Once its folder appears in Finder, come back and add it here."
+            alert.addButton(withTitle: "Open iCloud Settings")
+        case .googleDrive:
+            alert.messageText = "Google Drive is not on this Mac yet"
+            alert.informativeText = "Pagewrit reads Google Drive through Google's free Drive for desktop app. Install it, sign in, and once Google Drive shows in Finder's sidebar, come back and add it here."
+            alert.addButton(withTitle: "Get Google Drive")
+        }
+        alert.addButton(withTitle: "Not Now")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let link: String
+        switch service {
+        case .iCloudDrive: link = "x-apple.systempreferences:com.apple.systempreferences.AppleIDSettings?iCloud"
+        case .googleDrive: link = "https://www.google.com/drive/download/"
+        }
+        if let url = URL(string: link) { NSWorkspace.shared.open(url) }
     }
 
     /// A friendly name for a watched folder: "iCloud Drive" instead of
@@ -366,5 +409,19 @@ extension ScannerService {
         if path.contains("/Library/CloudStorage/GoogleDrive-") { return "Google Drive" }
         if path.contains("/Library/CloudStorage/") { return "Cloud storage" }
         return url.deletingLastPathComponent().path
+    }
+}
+
+
+/// Files already asked to download this session.
+final class CloudDownloadRequests: @unchecked Sendable {
+    static let shared = CloudDownloadRequests()
+    private var paths = Set<String>()
+    private let lock = NSLock()
+
+    /// True the first time a path is seen.
+    func claim(_ path: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return paths.insert(path).inserted
     }
 }

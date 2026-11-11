@@ -114,13 +114,9 @@ struct InvoicesView: View {
                             .foregroundStyle(store.overdueCount > 0 ? DesignTokens.accentSecondary : Color.secondary)
                     }
                     Spacer(minLength: 12)
-                    Picker("Group by", selection: $groupingRaw) {
-                        Text("Status").tag("status")
-                        Text("Vendor").tag("vendor")
-                    }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: 170)
+                    PWSegmented(selection: $groupingRaw,
+                                options: [("Status", "status"), ("Vendor", "vendor")])
+                        .accessibilityLabel("Group invoices by")
                 }
                 .padding(.bottom, 18)
 
@@ -178,7 +174,9 @@ struct InvoicesView: View {
                     .font(DesignTokens.sansFont(size: 12.5))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                    .help(detail(invoice))
             }
+            .layoutPriority(1)
 
             Spacer(minLength: 12)
 
@@ -187,10 +185,14 @@ struct InvoicesView: View {
                     Text(amount)
                         .font(DesignTokens.serifFont(size: 17, weight: .semibold))
                         .monospacedDigit()
+                        .lineLimit(1)
+                        .fixedSize()
                         .foregroundStyle(invoice.paid ? Color.secondary : Color.primary)
                 }
                 Text(invoice.dueLabel())
                     .font(DesignTokens.sansFont(size: 12.5, weight: .medium))
+                    .lineLimit(1)
+                    .fixedSize()
                     .foregroundStyle(tint(for: status))
             }
 

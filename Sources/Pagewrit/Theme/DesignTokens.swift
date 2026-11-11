@@ -26,6 +26,13 @@ enum DesignTokens {
     static let accent = Color(light: NSColor(red: 0.267, green: 0.553, blue: 0.639, alpha: 1),
                              dark: NSColor(red: 0.431, green: 0.690, blue: 0.769, alpha: 1))
 
+    /// Pagewrit's teal at full depth, for solid controls with white text:
+    /// primary buttons, chosen segments, switches, picked tiles. A deep,
+    /// slightly inky teal reads richer than the soft accent and keeps white
+    /// text crisp in both light and dark mode.
+    static let accentFill = Color(light: NSColor(red: 0.106, green: 0.361, blue: 0.447, alpha: 1),
+                                  dark: NSColor(red: 0.161, green: 0.431, blue: 0.525, alpha: 1))
+
     /// The same hue deepened so small text in it passes contrast on white.
     static let accentInk = Color(light: NSColor(red: 0.133, green: 0.345, blue: 0.431, alpha: 1),
                                 dark: NSColor(red: 0.647, green: 0.827, blue: 0.890, alpha: 1))
@@ -504,8 +511,7 @@ private struct PWButtonBody: View {
 
     /// The main action: a deep teal in light mode, a bright teal in dark mode,
     /// with text chosen for contrast against each.
-    private static let primaryFill = Color(light: NSColor(red: 0.149, green: 0.396, blue: 0.490, alpha: 1),
-                                           dark: NSColor(red: 0.180, green: 0.455, blue: 0.565, alpha: 1))
+    private static var primaryFill: Color { DesignTokens.accentFill }
     private static let primaryText = Color.white
 
     // Sized like the system's own controls (small, regular, large) so the
@@ -593,6 +599,8 @@ private struct PWLabelStyle: LabelStyle {
 struct ScanningIndicator: View {
     var label: String = "Looking for new books"
     var detail: String?
+    /// One slim row with a small deck, for scans that run over a full library.
+    var compact = false
 
     @Environment(\.pagewritReduceMotion) private var reduceMotion
     @State private var tilt: CGSize = .zero
@@ -603,6 +611,33 @@ struct ScanningIndicator: View {
     }
 
     var body: some View {
+        if compact { compactBody } else { fullBody }
+    }
+
+    private var compactBody: some View {
+        HStack(spacing: 10) {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { context in
+                let t = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
+                ZStack {
+                    ForEach(0..<3, id: \.self) { i in
+                        page(index: i, time: t)
+                    }
+                }
+                .frame(width: 96, height: 64)
+                .scaleEffect(0.42)
+            }
+            .frame(width: 44, height: 30)
+            Text(detail.map { "\(label), \($0)" } ?? label)
+                .font(DesignTokens.sansFont(size: 12.5))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(detail.map { "\(label), \($0)" } ?? label)
+    }
+
+    private var fullBody: some View {
         VStack(spacing: 10) {
             TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion)) { context in
                 let t = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
@@ -746,6 +781,9 @@ struct AccessibilityRoot: ViewModifier {
             .transaction { transaction in
                 if appReduceMotion { transaction.animation = nil }
             }
+            // The system's blue focus outline looks unfinished around our own
+            // controls; every control already shows its own pressed and hover state.
+            .focusEffectDisabled()
             .id(textScale)
     }
 }
@@ -769,10 +807,7 @@ struct PWSegmented<Value: Hashable>: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.pagewritReduceMotion) private var reduceMotion
 
-    private static var selectedFill: Color {
-        Color(light: NSColor(red: 0.149, green: 0.396, blue: 0.490, alpha: 1),
-              dark: NSColor(red: 0.180, green: 0.455, blue: 0.565, alpha: 1))
-    }
+    private static var selectedFill: Color { DesignTokens.accentFill }
 
     private var selectedIndex: Int? { options.firstIndex { $0.value == selection } }
 
@@ -825,8 +860,15 @@ struct PWSegmented<Value: Hashable>: View {
                 .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
         )
         .focusable()
+        .focusEffectDisabled()
         .onKeyPress(.leftArrow) { choose((selectedIndex ?? 0) - 1); return .handled }
         .onKeyPress(.rightArrow) { choose((selectedIndex ?? -1) + 1); return .handled }
         .accessibilityElement(children: .contain)
     }
+}
+
+
+/// "1 book", "2 books": a count with the right word after it.
+func countText(_ count: Int, _ singular: String, _ plural: String? = nil) -> String {
+    "\(count) \(count == 1 ? singular : (plural ?? singular + "s"))"
 }

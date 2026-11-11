@@ -110,6 +110,8 @@ struct DogIntroView: View {
     let onDone: () -> Void
 
     @AppStorage(DogPet.nameKey) private var dogName = ""
+    @AppStorage(DogPet.pronounKey) private var pronounRaw = DogPet.Pronoun.they.rawValue
+    private var pronoun: DogPet.Pronoun { DogPet.Pronoun(rawValue: pronounRaw) ?? .they }
     @ObservedObject private var tracker = ReadingTracker.shared
     @Environment(\.colorScheme) private var colorScheme
     @State private var step = 0
@@ -130,7 +132,12 @@ struct DogIntroView: View {
     }
 
     private var trimmed: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var him: String { trimmed.isEmpty ? "He" : trimmed }
+    /// The name if there is one, otherwise She, He or They.
+    private var nameOrSubject: String { trimmed.isEmpty ? pronoun.Subject : trimmed }
+    /// Verbs agree with "they" only when no name stands in front of them.
+    private func agree(_ singular: String, _ plural: String) -> String {
+        trimmed.isEmpty ? pronoun.verb(singular, plural) : singular
+    }
 
     private var fieldFill: Color { Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.04) }
     private var hairline: Color { Color.primary.opacity(colorScheme == .dark ? 0.12 : 0.09) }
@@ -177,7 +184,7 @@ struct DogIntroView: View {
     // MARK: Hero
 
     private var bubbleText: String {
-        if step == 1 { return "\(tracker.goalMinutes) minutes a day? I will keep time." }
+        if step == 1 { return "\(readingMinutesText(tracker.goalMinutes)) a day? I will keep time." }
         return trimmed.isEmpty ? "Hi! What is my name?" : "Woof! I am \(trimmed)."
     }
 
@@ -241,7 +248,7 @@ struct DogIntroView: View {
                 .tracking(-0.4)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 6)
-            Text("He keeps time while you read and fetches a toy when you reach your goal.")
+            Text("\(pronoun.Subject) \(pronoun.verb("keeps", "keep")) time while you read and \(pronoun.verb("fetches", "fetch")) a toy when you reach your goal.")
                 .font(DesignTokens.sansFont(size: 14))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -302,6 +309,17 @@ struct DogIntroView: View {
                 .accessibilityLabel("More name ideas")
                 Spacer(minLength: 0)
             }
+            .padding(.bottom, 16)
+
+            HStack(spacing: 10) {
+                Text("Call your dog")
+                    .font(DesignTokens.sansFont(size: 12.5))
+                    .foregroundStyle(.secondary)
+                PWSegmented(selection: $pronounRaw,
+                            options: DogPet.Pronoun.allCases.map { ($0.label, $0.rawValue) })
+                    .accessibilityLabel("Pronoun for your dog")
+                Spacer(minLength: 0)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -315,7 +333,7 @@ struct DogIntroView: View {
                 .tracking(-0.4)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 6)
-            Text("\(him) keeps time while a book is open. Reach your goal and he runs off to fetch you a toy.")
+            Text("\(nameOrSubject) \(agree("keeps", "keep")) time while a book is open. Reach your goal and \(pronoun.subject) \(pronoun.verb("runs", "run")) off to fetch you a toy.")
                 .font(DesignTokens.sansFont(size: 14))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -356,7 +374,7 @@ struct DogIntroView: View {
             .frame(height: 68)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(selected ? DesignTokens.accent : fieldFill)
+                    .fill(selected ? DesignTokens.accentFill : fieldFill)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -366,7 +384,7 @@ struct DogIntroView: View {
         }
         .buttonStyle(.plain)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: selected)
-        .accessibilityLabel("\(minutes) minutes a day")
+        .accessibilityLabel("\(readingMinutesText(minutes)) a day")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 

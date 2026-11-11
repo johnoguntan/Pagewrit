@@ -312,9 +312,8 @@ struct SearchEmptyView: View {
                     }
                 } else if !history.isEmpty {
                     HStack {
-                        Text("RECENT")
+                        Text("Recent")
                             .font(DesignTokens.sansFont(size: 10.5, weight: .semibold))
-                            .tracking(0.6)
                             .foregroundStyle(colors.tint)
                         Spacer()
                         Button("Clear", action: onClearHistory)

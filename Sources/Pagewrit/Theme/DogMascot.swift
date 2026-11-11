@@ -62,8 +62,43 @@ final class DogPet: ObservableObject {
     static var name: String {
         (UserDefaults.standard.string(forKey: nameKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    /// For sentences: his name, or "your dog" if he has none yet.
+    /// For sentences: the dog's name, or "your dog" if there is none yet.
     static var callName: String { name.isEmpty ? "your dog" : name }
+
+    /// How people want their dog talked about. Chosen when they meet the
+    /// dog, and in Settings. "They" until someone picks.
+    enum Pronoun: String, CaseIterable, Identifiable {
+        case she, he, they
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .she: return "She"
+            case .he: return "He"
+            case .they: return "They"
+            }
+        }
+        /// she / he / they
+        var subject: String { rawValue }
+        var Subject: String { label }
+        /// her / him / them
+        var object: String {
+            switch self {
+            case .she: return "her"
+            case .he: return "him"
+            case .they: return "them"
+            }
+        }
+        /// "keeps" for she and he, "keep" for they.
+        func verb(_ singular: String, _ plural: String) -> String {
+            self == .they ? plural : singular
+        }
+    }
+
+    static let pronounKey = "pagewrit.dogPronoun"
+    static var pronoun: Pronoun {
+        Pronoun(rawValue: UserDefaults.standard.string(forKey: pronounKey) ?? "") ?? .they
+    }
 
     private static var pokeLines: [String] {
         var lines = [
@@ -172,7 +207,7 @@ enum BookSuggester {
             case .anything: return "Anything"
             case .inProgress: return "In progress"
             case .unstarted: return "Not started"
-            case .favourites: return "Favourites"
+            case .favourites: return "Favorites"
             case .loved: return "Rated 4 dogs and up"
             }
         }
@@ -182,7 +217,7 @@ enum BookSuggester {
             case .anything: return "Add a few books and I will pick one for you."
             case .inProgress: return "Nothing in progress right now. Start something new?"
             case .unstarted: return "You have started everything. Impressive."
-            case .favourites: return "No favourites yet. Star a book and I will remember it."
+            case .favourites: return "No favorites yet. Heart a book and I will remember it."
             case .loved: return "Rate a few books 4 dogs or more and I will suggest them here."
             }
         }
@@ -241,7 +276,7 @@ enum BookSuggester {
     private static func reason(for book: Book) -> String {
         let progress = book.readingProgress ?? 0
         if progress > 0 { return "You are \(max(Int(progress * 100), 1))% through. Pick it back up." }
-        if book.isFavorite { return "One of your favourites, still waiting for you." }
+        if book.isFavorite { return "One of your favorites, still waiting for you." }
         if book.rating >= 4 { return "You rated this highly. Worth a read." }
         return "Still unread. Today could be the day."
     }
@@ -632,6 +667,7 @@ struct DogCompanion: View {
     @EnvironmentObject private var library: LibraryStore
     @AppStorage("pagewrit.showDog") private var showDog = true
     @AppStorage("pagewrit.dogNudgeDay") private var nudgeDay = ""
+    @AppStorage("pagewrit.tip.dogPanel") private var seenPanelTip = false
     @State private var showPanel = false
 
     var body: some View {
@@ -645,6 +681,7 @@ struct DogCompanion: View {
                     .onTapGesture {
                         pet.poke()
                         showPanel.toggle()
+                        seenPanelTip = true
                     }
                     .help(DogPet.name.isEmpty ? "Your reading dog" : DogPet.name)
                     .accessibilityAddTraits(.isButton)
@@ -659,7 +696,36 @@ struct DogCompanion: View {
                     }
 
                 Group {
-                    if let line = pet.line {
+                    if !seenPanelTip && pet.line == nil && !pet.isFetching {
+                        // Shown until the first click on the dog, then never again.
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("Click me for your reading goal, a timer and book ideas.")
+                                .font(DesignTokens.sansFont(size: 12, weight: .medium))
+                                .fixedSize(horizontal: false, vertical: true)
+                            Button {
+                                seenPanelTip = true
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 14, height: 14)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Dismiss tip")
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(DesignTokens.accent.opacity(0.14))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(DesignTokens.accent.opacity(0.35), lineWidth: 0.75)
+                        )
+                        .transition(.opacity)
+                    } else if let line = pet.line {
                         Text(line)
                             .font(DesignTokens.sansFont(size: 12, weight: .medium))
                             .foregroundStyle(.primary)
@@ -769,7 +835,7 @@ struct ReadingTimerControls: View {
                 }
                 ProgressView(value: tracker.timerProgress)
                     .progressViewStyle(.linear)
-                    .tint(DesignTokens.accent)
+                    .tint(DesignTokens.accentFill)
                 HStack(spacing: 8) {
                     Button { tracker.togglePause() } label: {
                         Label(tracker.isPaused ? "Resume" : "Pause",
@@ -821,6 +887,8 @@ struct ReadingTimerPill: View {
     @ObservedObject private var tracker = ReadingTracker.shared
     @State private var showControls = false
     @Environment(\.readerToolbarCompact) private var compact
+    @AppStorage("pagewrit.tip.readerClock") private var seenClockTip = false
+    @State private var showTip = false
     @State private var hovering = false
 
     private var ringValue: Double {
@@ -836,7 +904,10 @@ struct ReadingTimerPill: View {
     private var stopped: Bool { tracker.state != .counting }
 
     var body: some View {
-        Button { showControls.toggle() } label: {
+        Button {
+            showControls.toggle()
+            seenClockTip = true
+        } label: {
             HStack(spacing: 6) {
                 ZStack {
                     Circle().stroke(tint.opacity(0.25), lineWidth: 2)
@@ -878,9 +949,41 @@ struct ReadingTimerPill: View {
         .accessibilityLabel("Reading timer")
         .accessibilityValue(tracker.timerMinutes != nil
             ? "\(clockText(tracker.timerRemaining)) left"
-            : "\(tracker.minutesToday) of \(tracker.goalMinutes) minutes today, \(clockStateText(tracker.state))")
+            : "\(tracker.minutesToday) of \(readingMinutesText(tracker.goalMinutes)) today, \(clockStateText(tracker.state))")
         .popover(isPresented: $showControls, arrowEdge: .bottom) {
             ReadingClockPopover()
+        }
+        // The first time any book opens, a small note says what this is.
+        .background(
+            Color.clear
+                .popover(isPresented: $showTip, arrowEdge: .bottom) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Your reading clock")
+                            .font(DesignTokens.sansFont(size: 13, weight: .semibold))
+                        Text("It counts today's reading toward your goal and pauses when you step away. Click it to pause or set a timer.")
+                            .font(DesignTokens.sansFont(size: 12.5))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Spacer()
+                            Button("Got it") {
+                                seenClockTip = true
+                                showTip = false
+                            }
+                            .buttonStyle(.pw(.primary, size: .small))
+                        }
+                    }
+                    .padding(16)
+                    .frame(width: 260)
+                }
+        )
+        .task {
+            guard !seenClockTip else { return }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if !seenClockTip { showTip = true }
+        }
+        .onChange(of: showTip) { _, open in
+            if !open { seenClockTip = true }
         }
     }
 }
@@ -945,7 +1048,7 @@ private struct ReadingClockPopover: View {
         .padding(18)
         .frame(width: 300)
         .fixedSize(horizontal: false, vertical: true)
-        .tint(DesignTokens.accent)
+        .tint(DesignTokens.accentFill)
     }
 }
 
@@ -972,6 +1075,7 @@ private struct ReadingPanel: View {
         VStack(alignment: .leading, spacing: 18) {
             todayRow
             weekBars
+            badgesRow
             goalRow
             Divider().opacity(0.5)
             ReadingTimerControls()
@@ -983,7 +1087,7 @@ private struct ReadingPanel: View {
         .padding(20)
         .frame(width: 340, alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
-        .tint(DesignTokens.accent)
+        .tint(DesignTokens.accentFill)
         .onAppear {
             tracker.refreshDay()
             if !looked {
@@ -1022,7 +1126,7 @@ private struct ReadingPanel: View {
             .frame(width: 70, height: 70)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Read today")
-            .accessibilityValue("\(tracker.minutesToday) of \(tracker.goalMinutes) minutes")
+            .accessibilityValue("\(tracker.minutesToday) of \(readingMinutesText(tracker.goalMinutes))")
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(headline)
@@ -1048,6 +1152,44 @@ private struct ReadingPanel: View {
         guard streak > 0 else { return "Reach your goal today to start a streak." }
         let days = "\(streak) \(streak == 1 ? "day" : "days") in a row"
         return tracker.progressToday >= 1 ? days + "." : days + ". Keep it going."
+    }
+
+    /// Streak badges: earned ones in colour, the rest waiting.
+    private var badgesRow: some View {
+        let earned = tracker.earnedBadges
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Streak badges")
+                    .font(DesignTokens.sansFont(size: 12.5))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if let next = tracker.nextBadge {
+                    Text("\(countText(next.daysToGo, "day")) to \(next.badge.title)")
+                        .font(DesignTokens.sansFont(size: 11.5))
+                        .foregroundStyle(.tertiary)
+                } else {
+                    Text("Every badge earned")
+                        .font(DesignTokens.sansFont(size: 11.5))
+                        .foregroundStyle(DesignTokens.accentInk)
+                }
+            }
+            HStack(spacing: 0) {
+                ForEach(ReadingTracker.badges) { badge in
+                    let date = earned[badge.days]
+                    BadgeMedal(days: badge.days, earned: date != nil, size: 36)
+                        .frame(maxWidth: .infinity)
+                        .help(date.map { "\(badge.title): earned \($0.formatted(date: .abbreviated, time: .omitted))" }
+                              ?? "\(badge.title): reach your goal \(badge.days) days in a row")
+                        .accessibilityLabel(badge.title)
+                        .accessibilityValue(date == nil ? "Not earned yet" : "Earned")
+                }
+            }
+            if tracker.perfectWeeks > 0 {
+                Text("\(countText(tracker.perfectWeeks, "perfect week")) so far")
+                    .font(DesignTokens.sansFont(size: 11.5))
+                    .foregroundStyle(.tertiary)
+            }
+        }
     }
 
     private var weekBars: some View {
@@ -1282,7 +1424,8 @@ private struct CelebrationCard: View {
         switch moment.kind {
         case .goal(let minutes, _): return "\(minutes) \(minutes == 1 ? "minute" : "minutes"). Goal reached!"
         case .finished: return "You finished it!"
-        case .timer(let minutes): return "\(minutes) \(minutes == 1 ? "minute" : "minutes"), done!"
+        case .timer(let minutes): return "\(readingMinutesText(minutes)), done!"
+        case .streak(_, let title): return "\(title) streak!"
         case .rest: return "Time for a short break"
         case .windDown: return "It is getting late"
         }
@@ -1295,10 +1438,14 @@ private struct CelebrationCard: View {
             return streak > 1 ? "\(streak) days in a row. \(fetched)" : fetched
         case .finished(let title):
             return showDog ? "\(title). \(dogName) brought you a \(toyName) to celebrate." : title
+        case .streak(let days, let title):
+            let weeks = ReadingTracker.shared.perfectWeeks
+            let extra = weeks > 1 ? " That makes \(weeks) perfect weeks." : ""
+            return "You reached your goal \(days) days in a row and earned the \(title) badge.\(extra)"
         case .timer:
             return showDog ? "Your timer is up. \(dogName) fetched you a \(toyName). Keep going or take a break." : "Your timer is up. Keep going or take a break."
         case .rest(let minutes):
-            return "You have read for \(minutes) minutes. Look at something far away for 20 seconds, stretch, and have some water."
+            return "You have read for \(readingMinutesText(minutes)). Look at something far away for 20 seconds, stretch, and have some water."
         case .windDown:
             return "Your quiet hours have started. Maybe finish this page, then rest your eyes."
         }
@@ -1312,7 +1459,13 @@ private struct CelebrationCard: View {
                     .trim(from: 0, to: ring)
                     .stroke(DesignTokens.accent, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                if showDog {
+                if case .streak(let days, _) = moment.kind {
+                    // The badge itself, landing with a little bounce.
+                    BadgeMedal(days: days, earned: true, size: 84)
+                        .scaleEffect(ring > 0.5 ? 1 : 0.4)
+                        .rotationEffect(.degrees(ring > 0.5 ? 0 : -25))
+                        .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.55).delay(0.2), value: ring)
+                } else if showDog {
                     DogMascot(mood: back ? .happy : .calm, hopTick: hop, lastActive: Date(),
                               fetchStart: reduceMotion || isGentle ? nil : start, fetchingToy: moment.toy,
                               carrying: back && !isGentle ? moment.toy : nil, travel: 520, size: 86)
@@ -1448,5 +1601,53 @@ private struct DogConfettiBurst: View {
         default:
             Image(systemName: "star.fill").font(.system(size: bit.size)).foregroundStyle(color)
         }
+    }
+}
+
+
+// MARK: - Badge
+
+/// A streak badge: a rosette with the number of days on it. Teal for the
+/// first weeks, coral from a month, gold from 100 days. Not yet earned, it is
+/// a faint outline of itself.
+struct BadgeMedal: View {
+    let days: Int
+    let earned: Bool
+    var size: CGFloat = 64
+
+    private var fill: Color {
+        guard earned else { return Color.primary.opacity(0.08) }
+        if days >= 100 { return Color(red: 0.83, green: 0.64, blue: 0.24) }
+        if days >= 30 { return DesignTokens.accentSecondary }
+        return DesignTokens.accentFill
+    }
+
+    var body: some View {
+        ZStack {
+            // The scalloped edge of a rosette
+            ForEach(0..<12, id: \.self) { i in
+                Circle()
+                    .fill(fill)
+                    .frame(width: size * 0.3, height: size * 0.3)
+                    .offset(y: -size * 0.355)
+                    .rotationEffect(.degrees(Double(i) * 30))
+            }
+            Circle().fill(fill).frame(width: size * 0.8, height: size * 0.8)
+            Circle()
+                .strokeBorder(Color.white.opacity(earned ? 0.5 : 0.12), lineWidth: max(size * 0.025, 0.75))
+                .frame(width: size * 0.62, height: size * 0.62)
+            VStack(spacing: -size * 0.02) {
+                Text("\(days)")
+                    .font(.system(size: size * 0.25, weight: .bold, design: .serif))
+                    .minimumScaleFactor(0.6)
+                if size >= 30 {
+                    Text(days == 1 ? "day" : "days")
+                        .font(.system(size: max(size * 0.1, 6), weight: .semibold))
+                }
+            }
+            .foregroundStyle(earned ? Color.white : Color.secondary)
+        }
+        .frame(width: size, height: size)
+        .shadow(color: .black.opacity(earned ? 0.18 : 0), radius: size * 0.06, y: size * 0.03)
     }
 }

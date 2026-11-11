@@ -41,6 +41,8 @@ struct EPUBReaderView: View {
     @State private var currentChapterIndex: Int = 0
     @State private var isLoading = true
     @State private var loadFailed = false
+    /// The book opened but its pages are locked by a store's copy protection.
+    @State private var isCopyProtected = false
     @State private var tocEntries: [TOCEntry] = []
     @StateObject private var speech = SpeechController()
     @State private var webBridge = EPUBWebBridge()
@@ -236,14 +238,26 @@ struct EPUBReaderView: View {
     }
 
     private var failureState: some View {
-        VStack(spacing: DesignTokens.Spacing.sm) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 32))
+        VStack(spacing: 12) {
+            Image(systemName: isCopyProtected ? "lock" : "exclamationmark.triangle")
+                .font(.system(size: 30, weight: .light))
                 .foregroundStyle(tint)
-            Text("Couldn't open this EPUB file.")
-                .font(DesignTokens.sansFont(size: 14))
+            Text(isCopyProtected ? "This book is copy-protected" : "This book couldn't be opened")
+                .font(DesignTokens.serifFont(size: 20, weight: .bold))
+                .foregroundStyle(textColor)
+            Text(isCopyProtected
+                 ? "The store it came from locks it to their own app (this is called DRM), so Pagewrit can't show its pages. Books without DRM, from Project Gutenberg, Standard Ebooks, many authors and publishers, open fine."
+                 : "The file may be damaged or incomplete. Try downloading it again, or open it in another app to check.")
+                .font(DesignTokens.sansFont(size: 13.5))
                 .foregroundStyle(tint)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 420)
+            Button("Close") { dismissWindow() }
+                .buttonStyle(.pw(.neutral, size: .regular))
+                .padding(.top, 6)
         }
+        .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
@@ -1397,6 +1411,14 @@ struct EPUBReaderView: View {
             isLoading = false
             return
         }
+        // Store copy protection (Adobe, Apple, Readium LCP) leaves the pages
+        // scrambled. Say so plainly instead of showing gibberish.
+        if EPUBProtection.isProtected(root: epubDoc.directory) {
+            isCopyProtected = true
+            loadFailed = true
+            isLoading = false
+            return
+        }
         self.epub = epubDoc
 
         // Build ordered chapter URLs from the spine
@@ -2004,4 +2026,40 @@ final class ReaderDebouncer {
 final class ReaderCSSBox {
     var key = ""
     var value = ""
+}
+
+
+// MARK: - Copy protection
+
+/// Spots EPUBs locked by store DRM. Font obfuscation (which every publisher
+/// may use to protect embedded fonts) is not DRM and is ignored.
+enum EPUBProtection {
+    private static let fontObfuscation: Set<String> = [
+        "http://www.idpf.org/2008/embedding",
+        "http://ns.adobe.com/pdf/enc#RC"
+    ]
+
+    static func isProtected(root: URL) -> Bool {
+        let metaInf = root.appendingPathComponent("META-INF", isDirectory: true)
+        let fm = FileManager.default
+        // Adobe ADEPT, Apple FairPlay and Readium LCP each leave a marker file.
+        for marker in ["rights.xml", "sinf.xml", "license.lcpl"]
+        where fm.fileExists(atPath: metaInf.appendingPathComponent(marker).path) {
+            return true
+        }
+        guard let data = try? Data(contentsOf: metaInf.appendingPathComponent("encryption.xml")),
+              let xml = String(data: data, encoding: .utf8) else { return false }
+        // Any encryption algorithm other than font obfuscation means locked pages.
+        let pattern = #"Algorithm\s*=\s*"([^"]+)""#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+        let range = NSRange(xml.startIndex..., in: xml)
+        for match in regex.matches(in: xml, range: range) {
+            guard let r = Range(match.range(at: 1), in: xml) else { continue }
+            let algorithm = String(xml[r])
+            // EncryptionMethod lines name the cipher; skip key-wrapping lines.
+            if algorithm.contains("xmldsig") { continue }
+            if !fontObfuscation.contains(algorithm) { return true }
+        }
+        return false
+    }
 }

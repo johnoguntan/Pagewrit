@@ -20,6 +20,8 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var recycleBin: [RecycledBook] = RecycledBook.loadAll()
 
     @Published private(set) var books: [Book] = []
+    private var continueReadingCache: [Book] = []
+    private var continueReadingKey = ""
 
     /// True while the import pipeline is running (scan + import cycle).
     @Published var isImporting: Bool = false
@@ -119,10 +121,17 @@ final class LibraryStore: ObservableObject {
         let coversFolder = folder.appendingPathComponent("Covers", isDirectory: true)
         try? FileManager.default.createDirectory(at: coversFolder, withIntermediateDirectories: true)
 
-        let schema = Schema([Book.self, BookClassification.self, DismissedDuplicatePair.self, Bookmark.self, Highlight.self])
+        let schema = Schema(versionedSchema: PagewritSchemaV1.self)
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        // Before a new version of the app opens the library for the first
+        // time, keep a copy of the database exactly as the old version left it.
+        LibraryDatabaseSafety.snapshotBeforeUpgrade(storeURL: config.url)
         do {
-            self.modelContainer = try ModelContainer(for: schema, configurations: [config])
+            self.modelContainer = try ModelContainer(
+                for: schema,
+                migrationPlan: PagewritMigrationPlan.self,
+                configurations: [config]
+            )
         } catch {
             // The saved library could not be opened (a failed migration, a
             // damaged store). Crashing here would loop on every launch, so
@@ -135,7 +144,7 @@ final class LibraryStore: ObservableObject {
             } catch {
                 fatalError("Failed to create even an in-memory ModelContainer: \(error)")
             }
-            self.lastSaveError = "Pagewrit couldn't open your saved library, so it started empty. Your book files are safe. Restart the app, and if this keeps happening, reinstall the latest version."
+            self.lastSaveError = "Pagewrit couldn't open your saved library, so it started empty. Your book files are safe, and a copy of the library was kept from before this update. Restart the app, or restore your latest backup from Settings \u{25B8} Library \u{25B8} Backup."
         }
         self.modelContext = modelContainer.mainContext
 
@@ -819,8 +828,10 @@ final class LibraryStore: ObservableObject {
     /// Called when a reader closes: writes the reading position to disk right
     /// away and tells the library screens, so Continue Reading and its
     /// "opened" time are correct the moment the reader is gone.
-    func commitReading() {
-        ReadingTracker.shared.end()
+    /// `countsTime: false` for readers that are not part of the reading
+    /// goal (documents), matching how they were opened.
+    func commitReading(countsTime: Bool = true) {
+        if countsTime { ReadingTracker.shared.end() }
         lightVersion &+= 1
         pendingSave?.cancel()
         saveNow()
@@ -829,8 +840,8 @@ final class LibraryStore: ObservableObject {
     /// Stamp a book as opened without necessarily changing progress — called
     /// when a reader is presented, so "Continue Reading" picks it up even
     /// before the first page-change fires an updateProgress call.
-    func markOpened(_ book: Book) {
-        ReadingTracker.shared.begin()
+    func markOpened(_ book: Book, countsTime: Bool = true) {
+        if countsTime { ReadingTracker.shared.begin() }
         DogPet.shared.touch()
         book.lastOpenedAt = Date()
         persist(light: true)
@@ -879,15 +890,18 @@ final class LibraryStore: ObservableObject {
     /// Books with progress in (0, 0.98), most recently opened first — the
     /// candidate list for the "Continue Reading" hero.
     var continueReading: [Book] {
-        books
-            .filter { book in
-                // Opened and not finished counts, even on the first page:
-                // a comic you started today is something you are reading.
-                book.status == .reading
-            }
+        // Cached: the sidebar and home page ask for this on every redraw, and
+        // sorting thousands of books each time made big libraries feel slow.
+        let key = "\(dataVersion)|\(lightVersion)|\(books.count)"
+        if continueReadingKey == key { return continueReadingCache }
+        let result = books
+            .filter { $0.status == .reading }
             .sorted { (lhs, rhs) in
                 (lhs.lastOpenedAt ?? lhs.addedAt) > (rhs.lastOpenedAt ?? rhs.addedAt)
             }
+        continueReadingCache = result
+        continueReadingKey = key
+        return result
     }
 
     /// Refresh the books array from the persistent store.
@@ -1279,5 +1293,73 @@ extension LibraryStore {
         apply(record, to: book)
         pending.removeValue(forKey: book.contentHash)
         UserDefaults.standard.set(pending, forKey: Self.pendingRestoreKey)
+    }
+}
+
+
+// MARK: - Schema versions
+
+/// Every shape the library database has had. A future change to a model (a
+/// new property, a renamed one) adds PagewritSchemaV2 with copies of the
+/// changed models and a stage in PagewritMigrationPlan, so existing libraries
+/// are carried forward instead of failing to open.
+///
+/// Rules for changing a model:
+/// 1. A new stored property always gets an inline default value.
+/// 2. Renames and type changes need a new schema version and a custom stage.
+/// 3. Never ship a change without opening an old library in a test first.
+enum PagewritSchemaV1: VersionedSchema {
+    static var versionIdentifier: Schema.Version { Schema.Version(1, 0, 0) }
+
+    static var models: [any PersistentModel.Type] {
+        [Book.self, BookClassification.self, DismissedDuplicatePair.self, Bookmark.self, Highlight.self]
+    }
+}
+
+enum PagewritMigrationPlan: SchemaMigrationPlan {
+    static var schemas: [any VersionedSchema.Type] { [PagewritSchemaV1.self] }
+    static var stages: [MigrationStage] { [] }
+}
+
+// MARK: - Database safety net
+
+/// When the app version changes, copies the library database aside before
+/// it is opened, so a failed upgrade can always be undone by hand. The three
+/// newest copies are kept, in Application Support/DatabaseBackups.
+enum LibraryDatabaseSafety {
+    private static let lastVersionKey = "pagewrit.lastOpenedAppVersion"
+
+    static func snapshotBeforeUpgrade(storeURL: URL) {
+        let defaults = UserDefaults.standard
+        let current = "\(AppInfo.version) (\(AppInfo.build))"
+        let previous = defaults.string(forKey: lastVersionKey)
+        defer { defaults.set(current, forKey: lastVersionKey) }
+        guard let previous, previous != current else { return }
+
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: storeURL.path) else { return }
+        let backups = storeURL.deletingLastPathComponent()
+            .appendingPathComponent("DatabaseBackups", isDirectory: true)
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let folder = backups.appendingPathComponent("before \(current) \(stamp)", isDirectory: true)
+        do {
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            // The store and its write-ahead log files travel together.
+            for suffix in ["", "-wal", "-shm"] {
+                let source = URL(fileURLWithPath: storeURL.path + suffix)
+                guard fm.fileExists(atPath: source.path) else { continue }
+                try fm.copyItem(at: source, to: folder.appendingPathComponent(source.lastPathComponent))
+            }
+            let older = (try? fm.contentsOfDirectory(at: backups, includingPropertiesForKeys: [.creationDateKey])) ?? []
+            let sorted = older.sorted {
+                let a = (try? $0.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                let b = (try? $1.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                return a > b
+            }
+            for stale in sorted.dropFirst(3) { try? fm.removeItem(at: stale) }
+            print("Pagewrit: kept a copy of the library from \(previous) before opening it with \(current).")
+        } catch {
+            print("Pagewrit: could not copy the library before the update: \(error)")
+        }
     }
 }

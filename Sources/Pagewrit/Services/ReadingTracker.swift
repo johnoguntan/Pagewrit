@@ -243,7 +243,7 @@ final class ReadingTracker: ObservableObject {
 
         let goal = Double(goalMinutes) * 60
         if before < goal, after >= goal {
-            celebrate(.goal(minutes: goalMinutes, streak: streak))
+            rewardGoalReached()
         }
     }
 
@@ -256,6 +256,8 @@ final class ReadingTracker: ObservableObject {
             case goal(minutes: Int, streak: Int)
             case finished(title: String)
             case timer(minutes: Int)
+            /// A streak badge: the goal met this many days in a row.
+            case streak(days: Int, title: String)
             /// Wellbeing: time to rest your eyes. No confetti, no sound.
             case rest(minutes: Int)
             /// Wellbeing: quiet hours have started. Shown once a night.
@@ -275,9 +277,10 @@ final class ReadingTracker: ObservableObject {
 
         let line: String
         switch kind {
-        case .goal(let minutes, _): line = "\(minutes) minutes today. I brought you this!"
+        case .goal(let minutes, _): line = "\(readingMinutesText(minutes)) today. I brought you this!"
+        case .streak(let days, _): line = "\(days) days in a row! You earned a badge."
         case .finished: line = "You finished a book! This is for you."
-        case .timer(let minutes): line = "\(minutes) minutes, done. Nicely read."
+        case .timer(let minutes): line = "\(readingMinutesText(minutes)), done. Nicely read."
         case .rest, .windDown:
             // Gentle moments: no fetch, no toy, just the card.
             celebration = Celebration(kind: kind, toy: toy)
@@ -303,6 +306,82 @@ final class ReadingTracker: ObservableObject {
 
     func dismissCelebration() { celebration = nil }
 
+    // MARK: Streak badges
+
+    /// Rewards for consistency: reach the goal this many days in a row.
+    struct StreakBadge: Identifiable, Equatable {
+        let days: Int
+        let title: String
+        var id: Int { days }
+    }
+
+    static let badges: [StreakBadge] = [
+        StreakBadge(days: 7, title: "One week"),
+        StreakBadge(days: 14, title: "Two weeks"),
+        StreakBadge(days: 30, title: "One month"),
+        StreakBadge(days: 60, title: "Two months"),
+        StreakBadge(days: 100, title: "100 days"),
+        StreakBadge(days: 365, title: "A whole year")
+    ]
+
+    private let badgesKey = "pagewrit.streakBadges"
+    private let perfectWeeksKey = "pagewrit.perfectWeeks"
+    private let perfectWeekDayKey = "pagewrit.perfectWeekDay"
+
+    /// When each badge was earned, by its number of days.
+    var earnedBadges: [Int: Date] {
+        let raw = UserDefaults.standard.dictionary(forKey: badgesKey) as? [String: Date] ?? [:]
+        return Dictionary(uniqueKeysWithValues: raw.compactMap { key, date in Int(key).map { ($0, date) } })
+    }
+
+    /// Every run of 7 goal days in a row: 7, 14, 21 and so on each count one.
+    var perfectWeeks: Int { UserDefaults.standard.integer(forKey: perfectWeeksKey) }
+
+    /// The next badge to aim for, and how many more days it needs.
+    var nextBadge: (badge: StreakBadge, daysToGo: Int)? {
+        let current = streak
+        guard let next = Self.badges.first(where: { earnedBadges[$0.days] == nil && $0.days > current })
+                ?? Self.badges.first(where: { $0.days > current }) else { return nil }
+        return (next, next.days - current)
+    }
+
+    /// The goal was just met: a streak badge if one was earned today,
+    /// otherwise the usual goal card.
+    private func rewardGoalReached() {
+        objectWillChange.send()
+        if let badge = checkStreakRewards() {
+            celebrate(.streak(days: badge.days, title: badge.title))
+        } else {
+            celebrate(.goal(minutes: goalMinutes, streak: streak))
+        }
+    }
+
+    /// Awards every badge the current streak has reached and counts perfect
+    /// weeks. Returns the biggest badge that is new today, if any.
+    @discardableResult
+    func checkStreakRewards() -> StreakBadge? {
+        let current = streak
+        let defaults = UserDefaults.standard
+        let today = Self.key(Date())
+
+        if current > 0, current % 7 == 0, defaults.string(forKey: perfectWeekDayKey) != today {
+            defaults.set(perfectWeeks + 1, forKey: perfectWeeksKey)
+            defaults.set(today, forKey: perfectWeekDayKey)
+        }
+
+        var raw = defaults.dictionary(forKey: badgesKey) as? [String: Date] ?? [:]
+        var newest: StreakBadge?
+        for badge in Self.badges where badge.days <= current && raw[String(badge.days)] == nil {
+            raw[String(badge.days)] = Date()
+            newest = badge
+        }
+        if newest != nil {
+            defaults.set(raw, forKey: badgesKey)
+            objectWillChange.send()
+        }
+        return newest
+    }
+
     // MARK: Goal and streak
 
     static let goalRange = 1...300
@@ -313,7 +392,7 @@ final class ReadingTracker: ObservableObject {
         UserDefaults.standard.set(goalMinutes, forKey: goalKey)
         // Lowering the goal below what you have already read still counts.
         if !wasMet, secondsToday >= Double(goalMinutes) * 60 {
-            celebrate(.goal(minutes: goalMinutes, streak: streak))
+            rewardGoalReached()
         }
     }
 

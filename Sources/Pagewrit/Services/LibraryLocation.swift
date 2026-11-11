@@ -46,9 +46,13 @@ enum LibraryLocation {
         return defaultFolder
     }
 
+    /// "Pagewrit Library" for new installs. Libraries made before the rename
+    /// keep their old "StoaLibrary" folder, so nothing has to move.
     static var defaultFolder: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("StoaLibrary", isDirectory: true)
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let legacy = documents.appendingPathComponent("StoaLibrary", isDirectory: true)
+        if FileManager.default.fileExists(atPath: legacy.path) { return legacy }
+        return documents.appendingPathComponent("Pagewrit Library", isDirectory: true)
     }
 
     /// True once the user has pointed the library somewhere other than the default.

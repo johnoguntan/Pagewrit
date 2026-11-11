@@ -24,6 +24,8 @@ struct SettingsView: View {
     @ObservedObject private var readingClock = ReadingTracker.shared
     @Environment(\.openWindow) private var openWindow
     @AppStorage(DogPet.nameKey) private var dogName = ""
+    @AppStorage(DogPet.pronounKey) private var dogPronounRaw = DogPet.Pronoun.they.rawValue
+    private var dogPronoun: DogPet.Pronoun { DogPet.Pronoun(rawValue: dogPronounRaw) ?? .they }
     @AppStorage("pagewrit.hasMetDog") private var hasMetDog = false
     @AppStorage("pagewrit.celebrationSound") private var celebrationSound = true
     @AppStorage("stoa.gridDensity") private var gridDensityRaw: String = GridDensity.comfortable.rawValue
@@ -112,7 +114,7 @@ struct SettingsView: View {
         }
         .frame(minWidth: 640, idealWidth: 880, maxWidth: 880, minHeight: 440, idealHeight: 640, maxHeight: 640)
         // Switches and sliders in Pagewrit's teal, not the system blue.
-        .tint(DesignTokens.accent)
+        .tint(DesignTokens.accentFill)
         .background(DesignTokens.background.ignoresSafeArea())
     }
 
@@ -236,7 +238,7 @@ struct SettingsView: View {
                 .padding(DesignTokens.Spacing.md)
             }
 
-            group(label: "Accessibility", footnote: "Every button, cover and list in Pagewrit has a VoiceOver label. On a book cover, the VoiceOver actions menu also offers Show details and Favourite. Readers use their own text size in Display.") {
+            group(label: "Accessibility", footnote: "Every button, cover and list in Pagewrit has a VoiceOver label. On a book cover, the VoiceOver actions menu also offers Show details and Favorite. Readers use their own text size in Display.") {
                 VStack(alignment: .leading, spacing: 0) {
                     settingRow("Text size", detail: "Makes the words in the library, sidebar and panels bigger.") {
                         PWSegmented(selection: $textScale,
@@ -261,7 +263,7 @@ struct SettingsView: View {
                     Toggle("", isOn: $showDog).labelsHidden().toggleStyle(.switch)
                         .accessibilityLabel("Show the dog")
                 }
-                settingRow("Name", detail: "He answers to it in the sidebar.") {
+                settingRow("Name", detail: "\(dogPronoun.Subject) \(dogPronoun.verb("answers", "answer")) to it in the sidebar.") {
                     TextField("No name yet", text: $dogName)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 180)
@@ -269,11 +271,16 @@ struct SettingsView: View {
                             if new.count > 24 { dogName = String(new.prefix(24)) }
                         }
                 }
+                settingRow("Pronoun", detail: "How Pagewrit talks about your dog.") {
+                    PWSegmented(selection: $dogPronounRaw,
+                                options: DogPet.Pronoun.allCases.map { ($0.label, $0.rawValue) })
+                        .accessibilityLabel("Pronoun for your dog")
+                }
                 settingRow("Celebration sound", detail: "A soft chime when you reach your goal or finish a book.") {
                     Toggle("", isOn: $celebrationSound).labelsHidden().toggleStyle(.switch)
                         .accessibilityLabel("Celebration sound")
                 }
-                settingRow("Introduce him again", detail: "Shows the meet the dog screen next time you open Pagewrit.") {
+                settingRow("Introduce \(dogPronoun.object) again", detail: "Shows the meet the dog screen next time you open Pagewrit.") {
                     Button("Reset") { hasMetDog = false }
                         .buttonStyle(.pw(.neutral, size: .regular))
                 }
@@ -392,7 +399,7 @@ struct SettingsView: View {
     private var libraryTab: some View {
         Group {
             VStack(alignment: .leading, spacing: 8) {
-                Text("\(library.books.count) books from \(scanner.allWatchedFolders.count) folders")
+                Text("\(countText(library.books.count, "book")) from \(countText(scanner.allWatchedFolders.count, "folder"))")
                     .font(DesignTokens.serifFont(size: 24, weight: .bold))
                     .tracking(-0.4)
                 HStack(spacing: 14) {
@@ -484,7 +491,7 @@ struct SettingsView: View {
                 .padding(.horizontal, DesignTokens.Spacing.md)
             }
 
-            group(label: "Backup", footnote: "A backup holds your ratings, favourites, tags, shelves, series, progress, highlights, notes, bookmarks, chosen covers and settings. Your book files stay where they are. Restoring adds to what you have and never deletes anything.") {
+            group(label: "Backup", footnote: "A backup holds your ratings, favorites, tags, shelves, series, progress, highlights, notes, bookmarks, chosen covers and settings. Your book files stay where they are. Restoring adds to what you have and never deletes anything.") {
                 VStack(alignment: .leading, spacing: 0) {
                     settingRow("Back up now", detail: "Save a backup file anywhere you like, such as iCloud Drive or a USB drive.") {
                         Button("Back Up\u{2026}") { backUpNow() }
@@ -547,7 +554,7 @@ struct SettingsView: View {
         do {
             try library.writeBackup(to: url)
             backupFailed = false
-            backupMessage = "Backed up \(library.books.count) books to \(url.lastPathComponent)."
+            backupMessage = "Backed up \(countText(library.books.count, "book")) to \(url.lastPathComponent)."
             Haptics.tick()
         } catch {
             backupFailed = true
@@ -570,8 +577,8 @@ struct SettingsView: View {
             let result = try library.restoreBackup(from: url)
             backupFailed = false
             var parts = ["Restored details for \(result.matched) \(result.matched == 1 ? "book" : "books")"]
-            if result.highlights > 0 { parts.append("\(result.highlights) highlights") }
-            if result.bookmarks > 0 { parts.append("\(result.bookmarks) bookmarks") }
+            if result.highlights > 0 { parts.append(countText(result.highlights, "highlight")) }
+            if result.bookmarks > 0 { parts.append(countText(result.bookmarks, "bookmark")) }
             var text = parts.joined(separator: ", ") + "."
             if result.waiting > 0 {
                 text += " \(result.waiting) more will be filled in when those files are found."
@@ -813,6 +820,10 @@ struct SettingsView: View {
 
             group(label: "Help") {
                 VStack(spacing: 0) {
+                    linkRow("Read the full privacy policy", icon: "hand.raised") {
+                        NSWorkspace.shared.open(AppInfo.privacyPolicyURL)
+                    }
+                    rowDivider
                     if AppInfo.hasSupportContact {
                         linkRow("Contact support", icon: "envelope") { AppInfo.contactSupport() }
                         rowDivider
@@ -1045,6 +1056,25 @@ extension SettingsView {
                 }
                 .padding(.horizontal, DesignTokens.Spacing.md)
                 .padding(.vertical, 6)
+
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(ReadingTracker.badges) { badge in
+                        let date = readingClock.earnedBadges[badge.days]
+                        VStack(spacing: 6) {
+                            BadgeMedal(days: badge.days, earned: date != nil, size: 48)
+                            Text(badge.title)
+                                .font(DesignTokens.sansFont(size: 11.5, weight: .medium))
+                                .foregroundStyle(date == nil ? Color.secondary : Color.primary)
+                            Text(date.map { $0.formatted(date: .abbreviated, time: .omitted) } ?? "Not yet")
+                                .font(DesignTokens.sansFont(size: 10.5))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+                .padding(.horizontal, DesignTokens.Spacing.md)
+                .padding(.vertical, 10)
             }
         }
     }
@@ -1061,7 +1091,7 @@ extension SettingsView {
                 .font(DesignTokens.sansFont(size: 12.5, weight: on ? .semibold : .medium))
                 .foregroundStyle(on ? Color.white : Color.primary.opacity(0.8))
                 .frame(width: 30, height: 30)
-                .background(Circle().fill(on ? DesignTokens.accent : Color.primary.opacity(0.08)))
+                .background(Circle().fill(on ? DesignTokens.accentFill : Color.primary.opacity(0.08)))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
